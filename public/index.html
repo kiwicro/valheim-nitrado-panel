@@ -211,8 +211,10 @@
               </div>
             </div>
             <p class="muted small">
-              Everyone Nitrado has seen on this server, with the platform ID Valheim actually needs. Use these rather
-              than guessing from a display name — Steam does not offer name lookups. Add one straight to a list:
+              Everyone Nitrado has seen on this server, with the platform ID Valheim actually needs. Steam has no
+              name lookup, but you can convert a profile link into an ID at
+              <a href="https://steamid.io/lookup" target="_blank" rel="noopener">steamid.io <svg class="ico"><use href="#i-external"/></svg></a>
+              — paste just the number here and the panel adds the <span class="mono">Steam_</span> prefix for you.
             </p>
             <table class="file-table">
               <thead><tr><th>Player</th><th>Platform ID</th><th>Status</th><th></th></tr></thead>
@@ -271,7 +273,9 @@
               These are the raw files from <span class="mono" id="raw-savedata">savedata/</span>. They are the source of
               truth for admin rights — the API view above can disagree with them. One ID per line, in
               <span class="mono">[Platform]_[UserID]</span> form (e.g. <span class="mono">Steam_76561197960287930</span>),
-              copied from the in-game <strong>F2</strong> panel. Restart the server after editing.
+              copied from the in-game <strong>F2</strong> panel or looked up at
+              <a href="https://steamid.io/lookup" target="_blank" rel="noopener">steamid.io <svg class="ico"><use href="#i-external"/></svg></a>.
+              Restart the server after editing.
             </p>
             <div id="raw-lists" class="raw-lists"></div>
           </div>
