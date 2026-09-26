@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Valheim Control Panel</title>
+    <link rel="stylesheet" href="styles.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%E2%9A%94%EF%B8%8F%3C/text%3E%3C/svg%3E"
+    />
+  </head>
+  <body>
+    <!-- icon sprite -->
+    <svg style="display: none" aria-hidden="true">
+      <symbol id="i-dash" viewBox="0 0 24 24"><path d="M3 13h8V3H3v10Zm0 8h8v-6H3v6Zm10 0h8V11h-8v10Zm0-18v6h8V3h-8Z"/></symbol>
+      <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0M14 4v4M8 10v4M16 16v4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+      <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 11a4 4 0 1 0-4-4 4 4 0 0 0 4 4Zm-8 0a4 4 0 1 0-4-4 4 4 0 0 0 4 4Zm0 2c-2.7 0-8 1.3-8 4v3h9v-3c0-1 .4-2 1.2-2.8A11 11 0 0 0 8 13Zm8 0c-.4 0-.8 0-1.2.1A5 5 0 0 1 16 17v3h8v-3c0-2.7-5.3-4-8-4Z"/></symbol>
+      <symbol id="i-logs" viewBox="0 0 24 24"><path d="M4 4h16v3H4zM4 10h16v3H4zM4 16h10v3H4z"/></symbol>
+      <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 5a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5Z"/></symbol>
+      <symbol id="i-power" viewBox="0 0 24 24"><path d="M11 3h2v9h-2z"/><path d="M6.5 6.3 5 4.9a9 9 0 1 0 14 0l-1.5 1.4a7 7 0 1 1-11 0Z"/></symbol>
+      <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></symbol>
+      <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></symbol>
+      <symbol id="i-restart" viewBox="0 0 24 24"><path d="M12 5V2L7 6l5 4V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7Z"/></symbol>
+      <symbol id="i-save" viewBox="0 0 24 24"><path d="M5 3h11l3 3v15H5zM8 3v6h7V3M8 14h8v7H8z" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z"/></symbol>
+      <symbol id="i-trash" viewBox="0 0 24 24"><path d="M6 7h12l-1 13H7L6 7Zm3-3h6l1 2H8l1-2Z"/></symbol>
+      <symbol id="i-gear" viewBox="0 0 24 24"><path d="M12 8a4 4 0 1 0 4 4 4 4 0 0 0-4-4Zm9 4-.2 1.6 2 1.6-2 3.4-2.4-1a8 8 0 0 1-1.4.8L16.6 21h-4l-.4-2.6a8 8 0 0 1-1.4-.8l-2.4 1-2-3.4 2-1.6L8 12l.2-1.6-2-1.6 2-3.4 2.4 1a8 8 0 0 1 1.4-.8L12.4 3h4l.4 2.6a8 8 0 0 1 1.4.8l2.4-1 2 3.4-2 1.6Z" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+      <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M12 5V2L7 6l5 4V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7Z"/></symbol>
+      <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 3h7v7h-2V6.4l-8.3 8.3-1.4-1.4L17.6 5H14V3ZM5 5h6v2H7v10h10v-4h2v6H5V5Z"/></symbol>
+      <symbol id="i-copy" viewBox="0 0 24 24"><path d="M9 2h9a2 2 0 0 1 2 2v12h-2V4H9V2ZM6 6h9a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z"/></symbol>
+      <symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 2 1 21h22L12 2Zm1 15h-2v2h2v-2Zm0-7h-2v5h2v-5Z"/></symbol>
+      <symbol id="i-send" viewBox="0 0 24 24"><path d="M2 21 23 12 2 3v7l15 2-15 2v7Z"/></symbol>
+    </svg>
+
+    <!-- ============================ SETUP SCREEN ============================ -->
+    <div id="setup" class="setup hidden">
+      <div class="setup-card">
+        <div class="setup-brand">
+          <span class="rune">⚔</span>
+          <div>
+            <h1>Valheim Control Panel</h1>
+            <p class="muted">Connect your Nitrado-hosted server</p>
+          </div>
+        </div>
+
+        <div id="setup-problem" class="alert warn hidden"></div>
+
+        <div class="setup-step">
+          <h2>1 · Nitrado API token</h2>
+          <p class="muted">
+            Create a <strong>long-life token</strong> in the
+            <a href="https://server.nitrado.net/eng/developer/tokens" target="_blank" rel="noopener">Nitrado Developer Portal <svg class="ico"><use href="#i-external"/></svg></a>.
+            Tick the service permissions — general control, settings (read + write), logs and file browser — so every tab works.
+            The token stays on this PC and is only ever sent to Nitrado.
+          </p>
+          <div id="setup-token-done" class="alert info hidden">A token is already saved. Paste a new one to replace it.</div>
+          <input id="setup-token" type="password" placeholder="Paste your long-life API token" autocomplete="off" spellcheck="false" />
+          <p id="setup-token-path" class="muted small"></p>
+        </div>
+
+        <div class="setup-step hidden" id="setup-service-step">
+          <h2>2 · Your server</h2>
+          <p class="muted" id="setup-service-hint">Loading your Nitrado servers…</p>
+          <select id="setup-service"></select>
+          <details id="setup-manual" class="setup-manual hidden">
+            <summary class="muted small">Can't see it? Enter the service ID by hand</summary>
+            <input id="setup-manual-id" class="mono" inputmode="numeric" placeholder="e.g. 1234567" autocomplete="off" />
+            <p class="muted small">
+              Open your server's page on nitrado.net and copy the number from the address bar:
+              <span class="mono">…/services/<strong>1234567</strong></span>
+            </p>
+          </details>
+        </div>
+
+        <div id="setup-error" class="alert error hidden"></div>
+
+        <div class="setup-actions">
+          <button id="setup-save" class="btn btn-primary">Save token</button>
+          <button id="setup-load" class="btn btn-ghost hidden">Reload servers</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================== MAIN APP ============================== -->
+    <div id="app" class="app hidden">
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="rune">⚔</span>
+          <div class="brand-text">
+            <strong>Valheim</strong>
+            <span class="muted">Control Panel</span>
+          </div>
+        </div>
+
+        <nav class="nav">
+          <button class="nav-item active" data-tab="dashboard"><svg class="ico"><use href="#i-dash"/></svg> Dashboard</button>
+          <button class="nav-item" data-tab="settings"><svg class="ico"><use href="#i-sliders"/></svg> Server settings</button>
+          <button class="nav-item" data-tab="players"><svg class="ico"><use href="#i-users"/></svg> Players &amp; admins</button>
+          <button class="nav-item" data-tab="logs"><svg class="ico"><use href="#i-logs"/></svg> Logs &amp; console</button>
+          <button class="nav-item" data-tab="files"><svg class="ico"><use href="#i-folder"/></svg> Files</button>
+        </nav>
+
+        <div class="sidebar-foot">
+          <div id="side-status" class="side-status">
+            <span class="dot dot-unknown"></span>
+            <span class="side-status-text">Connecting…</span>
+          </div>
+          <div id="side-server" class="side-server muted">—</div>
+          <button id="open-setup" class="btn btn-ghost btn-sm btn-block"><svg class="ico"><use href="#i-gear"/></svg> Setup</button>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <h1 id="page-title">Dashboard</h1>
+            <p id="page-sub" class="muted">—</p>
+          </div>
+          <div class="topbar-actions">
+            <span id="last-updated" class="muted small"></span>
+            <button id="refresh" class="btn btn-ghost btn-sm"><svg class="ico"><use href="#i-refresh"/></svg> Refresh</button>
+          </div>
+        </header>
+
+        <div id="banner" class="banner hidden"></div>
+
+        <!-- Dashboard -->
+        <section class="tab-panel active" data-panel="dashboard">
+          <div class="grid grid-dash">
+            <div class="card status-card">
+              <div class="status-head">
+                <span id="status-dot" class="dot dot-unknown"></span>
+                <div>
+                  <div id="status-label" class="status-label">Unknown</div>
+                  <div id="status-sub" class="muted small">—</div>
+                </div>
+              </div>
+              <div class="controls">
+                <button class="btn btn-success" data-action="start"><svg class="ico"><use href="#i-play"/></svg> Start</button>
+                <button class="btn btn-warn" data-action="restart"><svg class="ico"><use href="#i-restart"/></svg> Restart</button>
+                <button class="btn btn-danger" data-action="stop"><svg class="ico"><use href="#i-stop"/></svg> Stop</button>
+              </div>
+              <div id="action-note" class="muted small"></div>
+            </div>
+
+            <div class="card stat-card">
+              <div class="stat-label">Players online</div>
+              <div class="stat-value"><span id="players-online">–</span><span id="players-max" class="stat-suffix"></span></div>
+              <div id="players-bar" class="bar"><div class="bar-fill"></div></div>
+            </div>
+
+            <div class="card stat-card">
+              <div class="stat-label">World</div>
+              <div id="stat-world" class="stat-value smallish">–</div>
+              <div id="stat-worlds" class="muted small"></div>
+            </div>
+
+            <div class="card stat-card">
+              <div class="stat-label">Connect</div>
+              <div id="stat-connect" class="stat-value smallish mono">–</div>
+              <button id="copy-connect" class="btn btn-ghost btn-sm"><svg class="ico"><use href="#i-copy"/></svg> Copy address</button>
+            </div>
+          </div>
+
+          <div class="grid grid-2">
+            <div class="card">
+              <div class="card-head"><h2>Server</h2><span id="upd-badge" class="badge hidden"></span></div>
+              <dl class="kv" id="server-facts"></dl>
+            </div>
+            <div class="card">
+              <div class="card-head"><h2>Performance <span class="muted small">(last 24h)</span></h2></div>
+              <div id="charts" class="charts"></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><h2>Online now</h2><span id="online-count" class="muted small"></span></div>
+            <div id="online-list" class="online-list"></div>
+          </div>
+        </section>
+
+        <!-- Settings -->
+        <section class="tab-panel" data-panel="settings">
+          <div class="card">
+            <div class="card-head">
+              <h2>Server settings</h2>
+              <div class="row-actions">
+                <span id="settings-dirty" class="muted small"></span>
+                <button id="settings-reload" class="btn btn-ghost btn-sm"><svg class="ico"><use href="#i-refresh"/></svg> Reload</button>
+                <button id="settings-save" class="btn btn-primary btn-sm" disabled><svg class="ico"><use href="#i-save"/></svg> Save changes</button>
+              </div>
+            </div>
+            <div id="settings-warning" class="alert warn hidden"></div>
+            <div id="settings-body" class="settings-body"><div class="loading">Loading settings…</div></div>
+          </div>
+        </section>
+
+        <!-- Players -->
+        <section class="tab-panel" data-panel="players">
+          <div class="card">
+            <div class="card-head"><h2>Online players</h2><button class="btn btn-ghost btn-sm" data-load="players"><svg class="ico"><use href="#i-refresh"/></svg> Refresh</button></div>
+            <div id="online-players" class="online-list"></div>
+          </div>
+
+          <div class="grid grid-3">
+            <div class="card list-card">
+              <div class="card-head"><h2>Admins</h2><span class="muted small">adminlist</span></div>
+              <p class="muted small">Admins can use console commands in-game.</p>
+              <ul id="list-adminlist" class="player-list"></ul>
+              <div class="add-row">
+                <input placeholder="Steam ID or name" data-add-input="adminlist" />
+                <button class="btn btn-primary btn-sm" data-add="adminlist"><svg class="ico"><use href="#i-plus"/></svg></button>
+              </div>
+            </div>
+
+            <div class="card list-card">
+              <div class="card-head"><h2>Banned</h2><span class="muted small">banlist</span></div>
+              <p class="muted small">Banned players cannot join the server.</p>
+              <ul id="list-banlist" class="player-list"></ul>
+              <div class="add-row">
+                <input placeholder="Steam ID or name" data-add-input="banlist" />
+                <button class="btn btn-primary btn-sm" data-add="banlist"><svg class="ico"><use href="#i-plus"/></svg></button>
+              </div>
+            </div>
+
+            <div class="card list-card">
+              <div class="card-head"><h2>Whitelist</h2><span class="muted small">whitelist</span></div>
+              <p class="muted small">Only listed players may join (if supported).</p>
+              <ul id="list-whitelist" class="player-list"></ul>
+              <div class="add-row">
+                <input placeholder="Steam ID or name" data-add-input="whitelist" />
+                <button class="btn btn-primary btn-sm" data-add="whitelist"><svg class="ico"><use href="#i-plus"/></svg></button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Logs -->
+        <section class="tab-panel" data-panel="logs">
+          <div class="card">
+            <div class="card-head">
+              <h2>Server console</h2>
+              <span class="muted small">Send a command to the running server</span>
+            </div>
+            <div class="console-row">
+              <input id="console-input" class="mono" placeholder="e.g. save   ·   help   ·   kick PlayerName" spellcheck="false" />
+              <button id="console-send" class="btn btn-primary"><svg class="ico"><use href="#i-send"/></svg> Send</button>
+            </div>
+            <div id="console-log" class="muted small"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <h2>Server log</h2>
+              <div class="row-actions">
+                <select id="log-file-select" class="select"></select>
+                <label class="check"><input type="checkbox" id="log-follow" checked /> Auto-refresh</label>
+                <button id="log-refresh" class="btn btn-ghost btn-sm"><svg class="ico"><use href="#i-refresh"/></svg> Refresh</button>
+              </div>
+            </div>
+            <div id="log-path" class="muted small mono"></div>
+            <pre id="log-view" class="log-view">No log file selected.</pre>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <h2>Activity log</h2>
+              <div class="row-actions">
+                <button id="activity-prev" class="btn btn-ghost btn-sm">‹ Newer</button>
+                <span id="activity-page" class="muted small">page 1</span>
+                <button id="activity-next" class="btn btn-ghost btn-sm">Older ›</button>
+              </div>
+            </div>
+            <ul id="activity-list" class="activity-list"></ul>
+          </div>
+        </section>
+
+        <!-- Files -->
+        <section class="tab-panel" data-panel="files">
+          <div class="card">
+            <div class="card-head">
+              <h2>File browser</h2>
+              <div class="row-actions">
+                <button id="files-up" class="btn btn-ghost btn-sm">↑ Up</button>
+                <button id="files-refresh" class="btn btn-ghost btn-sm"><svg class="ico"><use href="#i-refresh"/></svg> Refresh</button>
+              </div>
+            </div>
+            <div id="files-path" class="crumb mono"></div>
+            <div id="files-quick" class="quick-files"></div>
+            <table class="file-table">
+              <thead><tr><th>Name</th><th>Size</th><th>Modified</th></tr></thead>
+              <tbody id="files-list"></tbody>
+            </table>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <h2 id="editor-title">Editor</h2>
+              <div class="row-actions">
+                <span id="editor-path" class="muted small mono"></span>
+                <button id="editor-save" class="btn btn-primary btn-sm" disabled><svg class="ico"><use href="#i-save"/></svg> Save file</button>
+              </div>
+            </div>
+            <textarea id="editor" class="editor mono" spellcheck="false" placeholder="Select a text file to edit…" disabled></textarea>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div id="toasts" class="toasts"></div>
+    <script src="settings-schema.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

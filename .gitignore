@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Saved credentials — contains your Nitrado API token. Never commit this.
+data/
+.env
+.env.*
+!.env.example
+
+# Leftovers from atomic writes
+*.tmp
+
+# Logs
+*.log
+
+# OS cruft
+Thumbs.db
+desktop.ini
+.DS_Store
