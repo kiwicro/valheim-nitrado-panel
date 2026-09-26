@@ -223,14 +223,46 @@ select { cursor: pointer; }
   border-radius: var(--radius-sm) var(--radius-sm) 0 0;
   font-size: 12px; text-transform: uppercase; letter-spacing: .8px; font-weight: 700; color: var(--muted);
 }
-.settings-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 16px; padding: 16px 14px; }
+.settings-group > header h2 { margin: 0; font-size: 12px; letter-spacing: .8px; text-transform: uppercase; color: var(--muted); }
+.section-desc { margin: 0; padding: 12px 14px 0; line-height: 1.5; }
+.settings-fields {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 16px 18px; padding: 16px 14px; align-items: start;
+}
+/* Switches get their own denser grid — they are short rows, not stacked fields. */
+.settings-fields.toggles { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px 18px; }
 .field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .field .hint { font-size: 11px; color: var(--muted); }
 .field .changed { color: var(--accent); font-size: 10px; border: 1px solid var(--accent); border-radius: 99px; padding: 0 6px; white-space: nowrap; }
-.field.switch { flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; }
+
+/* Switch sits immediately after its label rather than at the far edge of the
+   column, and the whole label is clickable via its `for` attribute. */
+.field.switch { flex-direction: row; align-items: center; justify-content: flex-start; gap: 10px; }
 
 .field-label { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; font-weight: 600; }
-.field.switch .field-label { align-items: center; max-width: 78%; }
+.field.switch .field-label { align-items: center; cursor: pointer; }
+
+/* inline validation under a field */
+.field.has-error input, .field.has-error select {
+  border-color: var(--red);
+  box-shadow: 0 0 0 3px rgba(242, 99, 95, 0.12);
+}
+.field-msg { font-size: 11.5px; line-height: 1.45; }
+.field-msg.error { color: var(--red); }
+.field-msg.warn { color: var(--amber); }
+
+/* sticky save bar, shown only while there are unsaved changes */
+.sticky-actions {
+  position: sticky; bottom: 12px; z-index: 40;
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 11px 14px;
+  background: linear-gradient(180deg, rgba(33, 39, 54, 0.96), rgba(26, 31, 42, 0.97));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(8px);
+}
+.bar-problem { color: var(--red); font-weight: 600; }
 
 .field input[type="checkbox"] { width: 42px; height: 24px; appearance: none; background: #12161f; border: 1px solid var(--border); border-radius: 99px; position: relative; cursor: pointer; transition: background .15s; flex: 0 0 auto; }
 .field input[type="checkbox"]::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: var(--muted); transition: transform .15s, background .15s; }

@@ -736,6 +736,36 @@ function settingId(category, key) {
   return `${category}::${key}`;
 }
 
+function sectionFor(key, sections) {
+  const norm = normalizeKey(String(key).split('.').pop());
+  return sections.find((section) => (section.keys || []).some((k) => normalizeKey(k) === norm)) || null;
+}
+
+/** One titled block of settings, with inputs and switches laid out separately. */
+function renderSettingsSection(category, title, description, entries, categoryDefaults) {
+  const group = el('section', { class: 'settings-group' });
+  group.append(
+    el('header', {}, el('h2', {}, title), el('span', { class: 'muted' }, `${entries.length}`))
+  );
+  if (description) group.append(el('p', { class: 'section-desc muted small' }, description));
+
+  const isToggle = (entry) => resolveField(entry.key, entry.meta, entry.value).kind === 'boolean';
+  const inputs = entries.filter((entry) => !isToggle(entry));
+  const toggles = entries.filter(isToggle);
+
+  if (inputs.length) {
+    const grid = el('div', { class: 'settings-fields' });
+    for (const entry of inputs) grid.append(renderSettingField(category, entry, categoryDefaults));
+    group.append(grid);
+  }
+  if (toggles.length) {
+    const grid = el('div', { class: 'settings-fields toggles' });
+    for (const entry of toggles) grid.append(renderSettingField(category, entry, categoryDefaults));
+    group.append(grid);
+  }
+  return group;
+}
+
 function renderSettings() {
   const body = $('#settings-body');
   body.textContent = '';
@@ -744,6 +774,7 @@ function renderSettings() {
 
   const settings = state.settings.settings || {};
   const defaults = state.settings.defaults || {};
+  const sections = window.SETTINGS_SECTIONS || [];
   const categories = Object.keys(settings);
 
   if (!categories.length) {
@@ -757,22 +788,37 @@ function renderSettings() {
     const entries = flattenSettings(categorySettings);
     if (!entries.length) continue;
 
-    const group = el('section', { class: 'settings-group' });
-    group.append(
-      el(
-        'header',
-        {},
-        el('span', {}, categoryLabel(category)),
-        el('span', { class: 'muted' }, `${entries.length} setting${entries.length === 1 ? '' : 's'}`)
-      )
-    );
-
-    const fields = el('div', { class: 'settings-fields' });
+    const buckets = new Map();
+    const unassigned = [];
     for (const entry of entries) {
-      fields.append(renderSettingField(category, entry, defaults[category]));
+      const section = sectionFor(entry.key, sections);
+      if (!section) {
+        unassigned.push(entry);
+        continue;
+      }
+      if (!buckets.has(section.id)) buckets.set(section.id, []);
+      buckets.get(section.id).push(entry);
     }
-    group.append(fields);
-    body.append(group);
+
+    for (const section of sections) {
+      const bucket = buckets.get(section.id);
+      if (!bucket?.length) continue;
+      body.append(renderSettingsSection(category, section.title, section.description, bucket, defaults[category]));
+    }
+
+    // Anything the schema has not categorised still gets rendered, so a new
+    // setting Nitrado adds can never silently disappear.
+    if (unassigned.length) {
+      body.append(
+        renderSettingsSection(
+          category,
+          `${categoryLabel(category)} — other`,
+          'Settings Nitrado reports that this panel has no category for yet.',
+          unassigned,
+          defaults[category]
+        )
+      );
+    }
   }
 
   // Escape hatch: let the user see the exact payload Nitrado returned.
@@ -780,6 +826,8 @@ function renderSettings() {
   details.append(el('summary', { class: 'muted small' }, 'Show raw settings JSON'));
   details.append(el('pre', { class: 'log-view' }, JSON.stringify(settings, null, 2)));
   body.append(details);
+
+  applyValidation();
 }
 
 /** A label with a hover explanation and the raw Nitrado key called out. */
@@ -790,6 +838,11 @@ function labelWithTip(text, help, rawKey, id) {
 
   if (help || rawKey) {
     const tip = el('span', { class: 'tip', tabindex: '0', role: 'note', 'aria-label': help || `Nitrado key: ${rawKey}` });
+    // Stop a click on the info icon from toggling a switch it sits inside.
+    tip.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
     tip.append(el('span', { class: 'tip-icon' }, 'i'));
     const body = el('span', { class: 'tip-body' });
     if (help) body.append(el('span', { class: 'tip-text' }, help));
@@ -824,7 +877,7 @@ function renderSettingField(category, entry, categoryDefaults) {
   }
 
   const build = (control, extra) => {
-    const holder = el('div', { class: 'field' });
+    const holder = el('div', { class: 'field', dataset: { field: id } });
     holder.append(labelWithTip(label, help, entry.key, id), control);
     if (extra) holder.append(extra);
     if (hints.length) holder.append(el('span', { class: 'hint' }, hints.join(' · ')));
@@ -832,11 +885,17 @@ function renderSettingField(category, entry, categoryDefaults) {
   };
 
   if (resolved.kind === 'boolean') {
-    const holder = el('div', { class: 'field switch' });
-    holder.append(labelWithTip(label, help, entry.key, id));
+    const inputId = `sw_${String(id).replace(/[^a-z0-9]/gi, '_')}`;
+    const holder = el('div', { class: 'field switch', dataset: { field: id } });
+    const toggleLabel = labelWithTip(label, help, entry.key, id);
+    // A real `for` means clicking the text toggles, so the switch does not have
+    // to sit at the far edge of the column to be reachable.
+    toggleLabel.setAttribute('for', inputId);
+    holder.append(toggleLabel);
     holder.append(
       el('input', {
         type: 'checkbox',
+        id: inputId,
         checked: value === 'true',
         onchange: (event) => markDirty(id, event.target.checked ? 'true' : 'false'),
       })
@@ -916,6 +975,103 @@ function renderSettingField(category, entry, categoryDefaults) {
   );
 }
 
+/** Effective value for a setting, preferring an unsaved edit over the stored one. */
+function effectiveValue(normalizedKey) {
+  for (const [id, meta] of state.settingMeta) {
+    if (normalizeKey(String(meta.key).split('.').pop()) === normalizedKey) {
+      return state.dirty.has(id) ? state.dirty.get(id) : meta.original;
+    }
+  }
+  return null;
+}
+
+function fieldIdFor(normalizedKey) {
+  for (const [id, meta] of state.settingMeta) {
+    if (normalizeKey(String(meta.key).split('.').pop()) === normalizedKey) return id;
+  }
+  return null;
+}
+
+/**
+ * Cross-field checks Valheim actually enforces at startup.
+ *
+ * The password must be at least 5 characters and must not appear anywhere
+ * inside the server name, or the server refuses to boot. Several hosts also
+ * report the same rule for the world name, so both are checked.
+ */
+function validateSettings() {
+  const messages = [];
+  const passwordId = fieldIdFor('password');
+  if (!passwordId) return messages;
+
+  const password = effectiveValue('password') || '';
+  const serverName = effectiveValue('servername') || '';
+  const worldName = effectiveValue('worldname') || '';
+
+  if (password === '') {
+    if (effectiveValue('public') === 'true') {
+      messages.push({ id: passwordId, level: 'warn', text: 'A public server needs a password, or Valheim refuses to start.' });
+    }
+    return messages;
+  }
+
+  if (password.length < 5) {
+    messages.push({ id: passwordId, level: 'error', text: `Must be at least 5 characters — it is currently ${password.length}.` });
+  }
+
+  const needle = password.toLowerCase();
+  if (serverName && serverName.toLowerCase().includes(needle)) {
+    messages.push({ id: passwordId, level: 'error', text: 'The password cannot appear anywhere inside the server name. Valheim refuses to start if it does.' });
+  }
+  if (worldName && worldName.toLowerCase().includes(needle)) {
+    messages.push({ id: passwordId, level: 'error', text: 'The password also appears inside the world name, which Valheim can reject. Change one of the two.' });
+  }
+  return messages;
+}
+
+function setFieldMessages(messages) {
+  $$('.field.has-error').forEach((node) => node.classList.remove('has-error'));
+  $$('.field-msg').forEach((node) => node.remove());
+
+  for (const message of messages) {
+    const holder = document.querySelector(`.field[data-field="${CSS.escape(message.id)}"]`);
+    if (!holder) continue;
+    holder.classList.toggle('has-error', message.level === 'error');
+    holder.append(el('span', { class: `field-msg ${message.level}` }, message.text));
+  }
+}
+
+/** Recompute validation, the save buttons and the sticky bar in one place. */
+function applyValidation() {
+  const messages = validateSettings();
+  setFieldMessages(messages);
+
+  const blocking = messages.filter((message) => message.level === 'error');
+  const count = state.dirty.size;
+  const label = count ? `${count} unsaved change${count === 1 ? '' : 's'}` : '';
+
+  const topSave = $('#settings-save');
+  if (topSave) topSave.disabled = count === 0 || blocking.length > 0;
+  const topText = $('#settings-dirty');
+  if (topText) topText.textContent = label;
+
+  const bar = $('#settings-bar');
+  if (bar) {
+    bar.classList.toggle('hidden', count === 0);
+    const text = $('#settings-bar-text');
+    if (text) {
+      text.textContent = blocking.length
+        ? `${blocking.length} problem${blocking.length === 1 ? '' : 's'} to fix before saving`
+        : label;
+      text.className = blocking.length ? 'small bar-problem' : 'small';
+    }
+    const barButton = $('#settings-save-bar');
+    if (barButton) barButton.disabled = blocking.length > 0;
+  }
+
+  return blocking;
+}
+
 function markDirty(id, value) {
   const meta = state.settingMeta.get(id);
   if (!meta) return;
@@ -925,9 +1081,7 @@ function markDirty(id, value) {
   const badge = $(`[data-for="${CSS.escape(id)}"]`);
   if (badge) badge.classList.toggle('hidden', !state.dirty.has(id));
 
-  const count = state.dirty.size;
-  $('#settings-dirty').textContent = count ? `${count} unsaved change${count === 1 ? '' : 's'}` : '';
-  $('#settings-save').disabled = count === 0;
+  applyValidation();
 }
 
 async function refreshSettings() {
@@ -957,6 +1111,13 @@ async function refreshSettings() {
 
 async function saveSettings() {
   if (!state.dirty.size) return;
+
+  const blocking = applyValidation();
+  if (blocking.length) {
+    toast('Fix the highlighted settings before saving.', 'error');
+    return;
+  }
+
   const updates = [];
   for (const [id, value] of state.dirty) {
     const meta = state.settingMeta.get(id);
@@ -965,8 +1126,12 @@ async function saveSettings() {
   }
 
   const button = $('#settings-save');
+  const barButton = $('#settings-save-bar');
+  const originalHtml = button.innerHTML;
   button.disabled = true;
   button.textContent = 'Saving…';
+  if (barButton) barButton.disabled = true;
+
   try {
     const res = await api('/api/settings', { method: 'POST', body: { updates } });
     if (res.failed) {
@@ -979,7 +1144,9 @@ async function saveSettings() {
   } catch (err) {
     toast(err.message, 'error');
   } finally {
-    button.textContent = 'Save changes';
+    button.innerHTML = originalHtml;
+    if (barButton) barButton.disabled = false;
+    applyValidation();
   }
 }
 
@@ -1921,6 +2088,10 @@ function wireEvents() {
   // settings
   $('#settings-reload').addEventListener('click', refreshSettings);
   $('#settings-save').addEventListener('click', saveSettings);
+  $('#settings-save-bar').addEventListener('click', saveSettings);
+  $('#settings-discard').addEventListener('click', () => {
+    if (confirm('Discard your unsaved settings changes?')) refreshSettings();
+  });
 
   // players
   $$('[data-add]').forEach((b) => b.addEventListener('click', () => addToList(b.dataset.add)));

@@ -32,7 +32,7 @@ window.SETTINGS_SCHEMA = {
   server_password: {
     aliases: ['Password', 'serverpassword', 'password', 'joinpassword'],
     label: 'Password',
-    help: 'Players must type this to join. Valheim requires at least 5 characters. A public server must have one — leave it empty only if Public is off.',
+    help: 'Players must type this to join. Valheim requires at least 5 characters, and the password must not appear anywhere inside the server name — if it does, the server refuses to start. A public server must have one.',
     type: 'password',
   },
 
@@ -294,3 +294,65 @@ window.SETTINGS_CATEGORY_LABELS = {
   custom: 'Custom',
   expert: 'Expert settings',
 };
+
+/* ---------------------------------------------------------------------------
+ * Sections break a long settings list into readable groups. Nitrado returns
+ * everything for Valheim in one flat `general` category, so without this the
+ * page is 28 fields with no shape.
+ *
+ * Keys are matched the same way as the schema above (case and punctuation
+ * ignored). Any setting not listed here still renders, under an "Other"
+ * heading at the end of its category, so nothing can go missing.
+ * ------------------------------------------------------------------------*/
+window.SETTINGS_SECTIONS = [
+  {
+    id: 'identity',
+    title: 'Server identity & access',
+    description: 'What players see, and how they get in.',
+    keys: ['ServerName', 'Password', 'Public', 'Crossplay'],
+  },
+  {
+    id: 'world',
+    title: 'World',
+    description: 'Which world save this server runs. Must match a folder in savedata/worlds_local exactly, capitals included.',
+    keys: ['WorldName'],
+  },
+  {
+    id: 'preset',
+    title: 'Difficulty preset',
+    description: 'Applies a whole bundle of difficulty values at once. Choose this before overriding the dials below it.',
+    keys: ['Preset'],
+  },
+  {
+    id: 'dials',
+    title: 'Difficulty dials',
+    description: 'Individual difficulty sliders. "Use preset" leaves a dial to whatever the preset sets.',
+    keys: ['CombatModifier', 'DeathPenaltyModifier', 'ResourcesModifier', 'RaidsModifier', 'PortalsModifier'],
+  },
+  {
+    id: 'rules',
+    title: 'World rules',
+    description: 'Toggles that change how the world plays — free building, raids, the map, portals and so on.',
+    keys: [
+      'nobuildcost',
+      'nocraftcost',
+      'noworkbench',
+      'allpiecesunlocked',
+      'allrecipesunlocked',
+      'dungeonbuild',
+      'nobossportals',
+      'teleportall',
+      'nomap',
+      'noportals',
+      'passivemobs',
+      'playerevents',
+      'fire',
+    ],
+  },
+  {
+    id: 'death',
+    title: 'Death behaviour — advanced',
+    description: 'The raw keys behind the Death penalty dial. Only needed for combinations the dial cannot express.',
+    keys: ['deathkeepequip', 'deathdeleteunequipped', 'deathdeleteitems', 'deathskillsreset'],
+  },
+];

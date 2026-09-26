@@ -140,6 +140,11 @@ from documentation, and they are the things most guides get wrong.
 - **Cheat commands do not work on dedicated servers**, admin or not — `spawn`,
   `god` and `fly` are refused by vanilla. Only a mod such as Server devcommands
   unlocks them.
+- **The password has startup rules.** Valheim needs at least 5 characters, and
+  the password must not appear anywhere inside the server name — the server
+  refuses to start otherwise (several hosts report the same for the world name).
+  A public server also needs a non-empty password. The panel checks all of this
+  live and blocks saving until the password is valid.
 - **Player IDs need a platform prefix**: `Steam_76561197960287930`, not a bare
   17-digit ID, and case-sensitive. The panel detects a pasted bare SteamID and
   offers to add the prefix, and flags entries that cannot be valid.
