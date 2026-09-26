@@ -1,5 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
+import fsSync from 'node:fs';
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import posix from 'node:path/posix';
 import { fileURLToPath } from 'node:url';
@@ -9,12 +11,8 @@ import { createStore } from './store.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 
-const store = createStore(
-  path.join(
-    process.env.NITRADO_DATA_DIR ? path.resolve(process.env.NITRADO_DATA_DIR) : path.join(ROOT, 'data'),
-    'config.json'
-  )
-);
+const DATA_DIR = process.env.NITRADO_DATA_DIR ? path.resolve(process.env.NITRADO_DATA_DIR) : path.join(ROOT, 'data');
+const store = createStore(path.join(DATA_DIR, 'config.json'));
 await store.load();
 
 const client = createClient({
@@ -805,11 +803,21 @@ app.use((err, req, res, next) => {
 
 const PORT = Number(process.env.PORT) || 8420;
 const HOST = process.env.HOST || '127.0.0.1';
+const PID_FILE = path.join(DATA_DIR, 'panel.pid');
 
-app.listen(PORT, HOST, () => {
+app.listen(PORT, HOST, async () => {
   const cfg = store.resolve();
   const source =
     cfg.tokenSource === 'panel' ? 'saved in the panel' : cfg.tokenSource === 'env' ? 'from the environment' : null;
+
+  // Records which process is the panel, so tools/stop.mjs can stop exactly this
+  // one instead of pattern-matching every node.exe on the machine.
+  try {
+    await fs.mkdir(DATA_DIR, { recursive: true });
+    await fs.writeFile(PID_FILE, String(process.pid));
+  } catch {
+    /* not fatal — stopping then falls back to a manual kill */
+  }
 
   console.log('');
   console.log('  Valheim / Nitrado control panel');
@@ -822,4 +830,28 @@ app.listen(PORT, HOST, () => {
     console.log(`  !  ${cfg.problem}`);
   }
   console.log('');
+});
+
+async function removePidFile() {
+  try {
+    await fs.rm(PID_FILE, { force: true });
+  } catch {
+    /* nothing we can do */
+  }
+}
+
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.on(signal, async () => {
+    await removePidFile();
+    process.exit(0);
+  });
+}
+
+// `exit` handlers must be synchronous.
+process.on('exit', () => {
+  try {
+    fsSync.rmSync(PID_FILE, { force: true });
+  } catch {
+    /* nothing we can do */
+  }
 });

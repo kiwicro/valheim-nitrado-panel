@@ -24,6 +24,50 @@ when the panel calls Nitrado directly.
 
 ---
 
+## Starting it without a terminal (Windows)
+
+You only need the terminal for the very first `npm install`. After that you can
+launch the panel by double-clicking:
+
+| File | What it does |
+| --- | --- |
+| **`Start Valheim Panel.vbs`** | Starts the panel with no console window and opens your browser. If it is already running it just opens the browser instead of starting a second copy. |
+| **`Stop Valheim Panel.vbs`** | Stops the panel. Only the panel is stopped — other node processes are untouched. |
+| **`Create Desktop Shortcut.vbs`** | Run once. Puts a **Valheim Control Panel** icon on your Desktop that starts everything. |
+
+Run **Create Desktop Shortcut** once, then forget about the terminal entirely —
+double-click the desktop icon, and the panel opens in your browser.
+
+### Starting it when you sign in
+
+To have the panel come up automatically at login, copy the desktop shortcut into:
+
+```
+%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup
+```
+
+Paste that path into the Explorer address bar to open the folder, then drop the
+shortcut in. The panel starts hidden and serves quietly in the background; open
+http://127.0.0.1:8420 whenever you want it.
+
+### If something goes wrong
+
+The launchers never fail silently. If the panel does not come up, you get a
+dialog with the reason, and the full output is in **`data/launch.log`**. The
+running server's own log is **`data/panel.log`**.
+
+The panel also writes **`data/panel.pid`** while it is running, which is how the
+stop script kills exactly the right process rather than every `node.exe` on the
+machine.
+
+### Where the icon comes from
+
+`assets/panel.ico` is generated, not hand-drawn — `npm run icon` regenerates it
+from `tools/make-icon.mjs` at 256/64/48/32/16 px. Edit the geometry in that file
+if you want a different mark.
+
+---
+
 ## Requirements
 
 - **Node.js 20 or newer** (tested on Node 25).
@@ -240,9 +284,16 @@ public/
   index.html      Markup
   styles.css      Dark Valheim-ish theme
   app.js          All front-end logic (no build step)
-  settings-schema.js  Friendly names, hover help and dropdown options for settings
+  settings-schema.js  Friendly names, hover help, dropdown options and sections
+tools/
+  launch.mjs      Starts the panel detached and opens the browser
+  stop.mjs        Stops the panel via data/panel.pid
+  make-icon.mjs   Generates assets/panel.ico
+assets/
+  panel.ico       Desktop shortcut icon (generated)
 test/
-  mock-nitrado.mjs  Fake Nitrado API for development
+  mock-nitrado.mjs  Fake Nitrado API shaped like a real Valheim service
+  discover.mjs      Read-only probe: dumps real API responses to data/discovery
 ```
 
 ## Troubleshooting

@@ -8,7 +8,11 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
-    "mock": "node test/mock-nitrado.mjs"
+    "panel": "node tools/launch.mjs",
+    "stop": "node tools/stop.mjs",
+    "icon": "node tools/make-icon.mjs",
+    "mock": "node test/mock-nitrado.mjs",
+    "discover": "node test/discover.mjs"
   },
   "engines": {
     "node": ">=20"
