@@ -31,6 +31,8 @@
       <symbol id="i-copy" viewBox="0 0 24 24"><path d="M9 2h9a2 2 0 0 1 2 2v12h-2V4H9V2ZM6 6h9a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z"/></symbol>
       <symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 2 1 21h22L12 2Zm1 15h-2v2h2v-2Zm0-7h-2v5h2v-5Z"/></symbol>
       <symbol id="i-send" viewBox="0 0 24 24"><path d="M2 21 23 12 2 3v7l15 2-15 2v7Z"/></symbol>
+      <symbol id="i-archive" viewBox="0 0 24 24"><path d="M3 5h18v3H3zM5 9h14v10H5zM10 12h4v2h-4z"/></symbol>
+      <symbol id="i-clock" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2Zm1 10.6 4 2.4-1 1.7-5-3V6h2Z"/></symbol>
     </svg>
 
     <!-- ============================ SETUP SCREEN ============================ -->
@@ -97,7 +99,8 @@
           <button class="nav-item active" data-tab="dashboard"><svg class="ico"><use href="#i-dash"/></svg> Dashboard</button>
           <button class="nav-item" data-tab="settings"><svg class="ico"><use href="#i-sliders"/></svg> Server settings</button>
           <button class="nav-item" data-tab="players"><svg class="ico"><use href="#i-users"/></svg> Players &amp; admins</button>
-          <button class="nav-item" data-tab="logs"><svg class="ico"><use href="#i-logs"/></svg> Logs &amp; console</button>
+          <button class="nav-item" data-tab="backups"><svg class="ico"><use href="#i-archive"/></svg> Backups &amp; schedule</button>
+          <button class="nav-item" data-tab="logs"><svg class="ico"><use href="#i-logs"/></svg> Logs</button>
           <button class="nav-item" data-tab="files"><svg class="ico"><use href="#i-folder"/></svg> Files</button>
         </nav>
 
@@ -127,6 +130,7 @@
 
         <!-- Dashboard -->
         <section class="tab-panel active" data-panel="dashboard">
+          <div id="notifications" class="stack hidden"></div>
           <div class="grid grid-dash">
             <div class="card status-card">
               <div class="status-head">
@@ -209,7 +213,7 @@
               <p class="muted small">Admins can use console commands in-game.</p>
               <ul id="list-adminlist" class="player-list"></ul>
               <div class="add-row">
-                <input placeholder="Steam ID or name" data-add-input="adminlist" />
+                <input placeholder="Steam_7656119…" data-add-input="adminlist" />
                 <button class="btn btn-primary btn-sm" data-add="adminlist"><svg class="ico"><use href="#i-plus"/></svg></button>
               </div>
             </div>
@@ -219,19 +223,99 @@
               <p class="muted small">Banned players cannot join the server.</p>
               <ul id="list-banlist" class="player-list"></ul>
               <div class="add-row">
-                <input placeholder="Steam ID or name" data-add-input="banlist" />
+                <input placeholder="Steam_7656119…" data-add-input="banlist" />
                 <button class="btn btn-primary btn-sm" data-add="banlist"><svg class="ico"><use href="#i-plus"/></svg></button>
               </div>
             </div>
 
             <div class="card list-card">
-              <div class="card-head"><h2>Whitelist</h2><span class="muted small">whitelist</span></div>
-              <p class="muted small">Only listed players may join (if supported).</p>
+              <div class="card-head"><h2>Whitelist</h2><span class="muted small">permittedlist.txt</span></div>
+              <div class="alert warn small" style="margin:0">
+                <strong>Careful:</strong> adding anyone here makes the server invite-only — everyone not on this list is
+                blocked. Leave it empty unless that is what you want.
+              </div>
               <ul id="list-whitelist" class="player-list"></ul>
               <div class="add-row">
-                <input placeholder="Steam ID or name" data-add-input="whitelist" />
+                <input placeholder="Steam_7656119…" data-add-input="whitelist" />
                 <button class="btn btn-primary btn-sm" data-add="whitelist"><svg class="ico"><use href="#i-plus"/></svg></button>
               </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <h2>What Valheim actually reads</h2>
+              <div class="row-actions">
+                <button class="btn btn-ghost btn-sm" data-load="players-raw"><svg class="ico"><use href="#i-refresh"/></svg> Reload files</button>
+              </div>
+            </div>
+            <p class="muted small">
+              These are the raw files from <span class="mono" id="raw-savedata">savedata/</span>. They are the source of
+              truth for admin rights — the API view above can disagree with them. One ID per line, in
+              <span class="mono">[Platform]_[UserID]</span> form (e.g. <span class="mono">Steam_76561197960287930</span>),
+              copied from the in-game <strong>F2</strong> panel. Restart the server after editing.
+            </p>
+            <div id="raw-lists" class="raw-lists"></div>
+          </div>
+        </section>
+
+        <!-- Backups & schedule -->
+        <section class="tab-panel" data-panel="backups">
+          <div id="worlds-alert" class="alert warn hidden"></div>
+
+          <div class="card">
+            <div class="card-head">
+              <h2>Worlds</h2>
+              <div class="row-actions">
+                <span id="worlds-note" class="muted small"></span>
+                <button class="btn btn-ghost btn-sm" data-load="worlds"><svg class="ico"><use href="#i-refresh"/></svg> Refresh</button>
+              </div>
+            </div>
+            <p class="muted small">
+              Valheim stores each world as a folder in <span class="mono">savedata/worlds_local/</span>. The
+              <strong>World name</strong> setting must match a folder exactly — if it does not, the server generates a
+              brand new world under that name instead of failing. Change it under Server settings.
+            </p>
+            <table class="file-table">
+              <thead><tr><th>World</th><th>Size</th><th>Last modified</th><th></th></tr></thead>
+              <tbody id="worlds-list"></tbody>
+            </table>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <h2>World backups</h2>
+              <div class="row-actions">
+                <span id="backups-note" class="muted small"></span>
+                <button class="btn btn-ghost btn-sm" data-load="backups"><svg class="ico"><use href="#i-refresh"/></svg> Refresh</button>
+              </div>
+            </div>
+            <p class="muted small">
+              Nitrado takes these automatically. The API can list and restore them but cannot create one on demand —
+              use the Nitrado web interface for that.
+            </p>
+            <div id="backups-body"><div class="loading">Loading backups…</div></div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <h2>Scheduled tasks</h2>
+              <div class="row-actions">
+                <span id="tasks-note" class="muted small"></span>
+                <button class="btn btn-ghost btn-sm" data-load="tasks"><svg class="ico"><use href="#i-refresh"/></svg> Refresh</button>
+              </div>
+            </div>
+            <p class="muted small">
+              Nitrado runs these on a cron schedule in your server's time zone. This is the real daily-restart mechanism —
+              there is no setting for it on the Valheim side.
+            </p>
+            <ul id="tasks-list" class="player-list"></ul>
+            <div class="add-row" id="task-add">
+              <select id="task-action" class="select"></select>
+              <input id="task-hour" class="mono" type="number" min="0" max="23" placeholder="hour" title="Hour (0-23)" />
+              <input id="task-minute" class="mono" type="number" min="0" max="59" placeholder="min" title="Minute (0-59)" />
+              <input id="task-data" placeholder="message (optional)" />
+              <button class="btn btn-primary btn-sm" id="task-create"><svg class="ico"><use href="#i-plus"/></svg> Add daily</button>
             </div>
           </div>
         </section>
@@ -241,13 +325,9 @@
           <div class="card">
             <div class="card-head">
               <h2>Server console</h2>
-              <span class="muted small">Send a command to the running server</span>
+              <span id="console-note" class="muted small"></span>
             </div>
-            <div class="console-row">
-              <input id="console-input" class="mono" placeholder="e.g. save   ·   help   ·   kick PlayerName" spellcheck="false" />
-              <button id="console-send" class="btn btn-primary"><svg class="ico"><use href="#i-send"/></svg> Send</button>
-            </div>
-            <div id="console-log" class="muted small"></div>
+            <div id="console-body"></div>
           </div>
 
           <div class="card">

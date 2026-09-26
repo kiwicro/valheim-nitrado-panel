@@ -47,16 +47,23 @@ function requireService() {
   return serviceId;
 }
 
-/** Normalise the several shapes Nitrado uses for file lists into {name, path}. */
-function normalizeFileList(list) {
+/**
+ * Normalise the several shapes Nitrado uses for file lists into {name, path}.
+ * config_files/log_files come back RELATIVE to the ftproot directory (for
+ * example "valheim/savedata/adminlist.txt"), so they are resolved against it.
+ */
+function normalizeFileList(list, baseDir) {
   if (!Array.isArray(list)) return [];
   return list
     .map((entry) => {
-      if (typeof entry === 'string') return { name: posix.basename(entry), path: entry };
-      const p = entry?.path || entry?.file || entry?.value || '';
-      return { ...entry, name: entry?.name || posix.basename(p), path: p };
+      const raw = typeof entry === 'string' ? entry : entry?.path || entry?.file || entry?.value || '';
+      if (!raw) return null;
+      const absolute = raw.startsWith('/') || !baseDir ? raw : posix.join(baseDir, raw);
+      return typeof entry === 'string'
+        ? { name: posix.basename(absolute), path: absolute }
+        : { ...entry, name: entry?.name || posix.basename(absolute), path: absolute };
     })
-    .filter((e) => e.path);
+    .filter(Boolean);
 }
 
 function normalizeService(s) {
@@ -89,6 +96,12 @@ async function fetchServerStatus(id) {
   const q = gs.query || {};
   const specific = gs.game_specific || {};
 
+  // Nitrado reports game_specific.path as the game folder; ftproot is its parent,
+  // and the relative paths in config_files/log_files resolve against that.
+  const rootPath = specific.path || null;
+  const ftproot = rootPath ? rootPath.replace(/[^/]+\/?$/, '') : null;
+  const savedataPath = rootPath ? posix.join(rootPath, 'savedata') : null;
+
   return {
     service: service && {
       id: service.id,
@@ -113,12 +126,15 @@ async function fetchServerStatus(id) {
       memoryMb: gs.memory_mb ?? null,
       slots: gs.slots ?? null,
       location: gs.location || null,
-      rootPath: specific.path || null,
+      rootPath,
+      ftproot,
+      savedataPath,
+      restartLogPath: ftproot ? posix.join(ftproot, 'restart.log') : null,
       updateStatus: specific.update_status || null,
       lastUpdate: specific.last_update || null,
       features: specific.features || {},
-      logFiles: normalizeFileList(specific.log_files),
-      configFiles: normalizeFileList(specific.config_files),
+      logFiles: normalizeFileList(specific.log_files, ftproot),
+      configFiles: normalizeFileList(specific.config_files, ftproot),
       credentials: gs.credentials || null,
       quota: gs.quota || null,
       hostSystems: gs.hostsystems || null,
@@ -136,6 +152,8 @@ async function fetchServerStatus(id) {
       allWorlds: Array.isArray(valheim.all_worlds) ? valheim.all_worlds : [],
       currentWorld: valheim.current_world || null,
       maxManualBackups: valheim.max_manual_backups ?? null,
+      valheimPlus: Boolean(valheim.valheimplus),
+      bepinex: Boolean(valheim.bepinex),
     },
     fetchedAt: Date.now(),
   };
@@ -466,6 +484,17 @@ app.post(
     const id = requireService();
     const command = String(req.body?.command || '').trim();
     if (!command) throw new NitradoError('No command provided.', { status: 400 });
+
+    // Valheim has no RCON. Only games with an application server accept
+    // commands this way, and Nitrado reports that capability explicitly.
+    const status = await fetchServerStatus(id);
+    if (!status?.server?.features?.has_application_server) {
+      throw new NitradoError(
+        'This service has no command channel. Valheim has no RCON, so admin commands (kick, ban, save, setworldmodifier) have to be run in-game from the F5 console by a player on the admin list.',
+        { status: 409 }
+      );
+    }
+
     const j = await client.post(`/services/${id}/gameservers/app_server/command`, { form: { command } });
     res.json({ ok: true, message: j.message || 'Command sent.', command });
   })
@@ -520,6 +549,240 @@ app.get(
     const id = requireService();
     const j = await client.get(`/services/${id}/gameservers/file_server/bookmarks`);
     res.json({ bookmarks: j?.data?.bookmarks || [] });
+  })
+);
+
+/* ----------------------------------------------------------- notifications */
+
+app.get(
+  '/api/notifications',
+  wrap(async (req, res) => {
+    const id = requireService();
+    const j = await client.get(`/services/${id}/notifications`);
+    const items = (j?.data?.notifications || []).map((n) => ({
+      id: n.id,
+      level: String(n.level || 'INFO').toUpperCase(),
+      type: n.type || null,
+      message: n.message || '',
+      messageLong: n.message_long || '',
+      createdAt: n.created_at || null,
+      timestamp: n.created_at_timestamp ?? null,
+      dismissed: Boolean(n.dismissed),
+    }));
+    res.json({ notifications: items });
+  })
+);
+
+/* ----------------------------------------------------------------- backups */
+
+app.get(
+  '/api/backups',
+  wrap(async (req, res) => {
+    const id = requireService();
+    const [list, possible, status] = await Promise.all([
+      client.get(`/services/${id}/gameservers/backups`),
+      client.get(`/services/${id}/gameservers/backups/restore_possible`).catch(tolerate([404, 400])),
+      fetchServerStatus(id).catch(tolerate([404])),
+    ]);
+
+    // Nitrado nests backups as { gameserver: { <folder>: [entries] }, database: {...} }
+    const raw = list?.data?.backups || {};
+    const groups = [];
+    for (const [kind, value] of Object.entries(raw)) {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+      for (const [folder, entries] of Object.entries(value)) {
+        groups.push({
+          kind,
+          folder,
+          backups: (Array.isArray(entries) ? entries : [])
+            .map((b) => ({
+              number: b.backup_number ?? b.backup_id ?? null,
+              type: b.backup_type || null,
+              timestamp: b.backup_timestamp ?? null,
+              size: b.backup_size ?? null,
+            }))
+            .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)),
+        });
+      }
+    }
+
+    res.json({
+      restorePossible: possible?.data?.restore_possible ?? null,
+      maxManualBackups: status?.valheim?.maxManualBackups ?? null,
+      hasBackups: status?.server?.features?.has_backups ?? null,
+      hasWorldBackups: status?.server?.features?.has_world_backups ?? null,
+      total: groups.reduce((n, g) => n + g.backups.length, 0),
+      groups,
+    });
+  })
+);
+
+app.post(
+  '/api/backups/restore',
+  wrap(async (req, res) => {
+    const id = requireService();
+    const { folder, backup, kind } = req.body || {};
+    if (!folder || !backup) throw new NitradoError('Both folder and backup number are required.', { status: 400 });
+    const group = kind === 'database' ? 'database' : 'gameserver';
+    const j = await client.post(`/services/${id}/gameservers/backups/${group}`, {
+      form: { folder, backup: String(backup) },
+    });
+    res.json({ ok: true, message: j.message || j.data || 'Backup restore started.' });
+  })
+);
+
+/* ------------------------------------------------------ scheduled tasks */
+
+app.get(
+  '/api/tasks',
+  wrap(async (req, res) => {
+    const id = requireService();
+    const [list, available] = await Promise.all([
+      client.get(`/services/${id}/tasks`),
+      client.get(`/services/${id}/tasks/list`).catch(tolerate([404, 400])),
+    ]);
+
+    const actions = [];
+    for (const entry of available?.data?.tasks || []) {
+      for (const [method, meta] of Object.entries(entry)) {
+        actions.push({ method, description: meta?.desc || method, dataDescription: meta?.data_desc || null });
+      }
+    }
+
+    const tasks = (list?.data?.tasks || []).map((t) => ({
+      id: t.id,
+      status: t.status,
+      cron: { minute: t.minute, hour: t.hour, day: t.day, month: t.month, weekday: t.weekday },
+      nextRun: t.next_run || null,
+      lastRun: t.last_run || null,
+      timezone: t.timezone || null,
+      action: t.action_method || null,
+      data: t.action_data || '',
+    }));
+
+    res.json({ tasks, actions });
+  })
+);
+
+app.post(
+  '/api/tasks',
+  wrap(async (req, res) => {
+    const id = requireService();
+    const { action, data, minute, hour, day, month, weekday } = req.body || {};
+    if (!action) throw new NitradoError('An action is required.', { status: 400 });
+    const j = await client.post(`/services/${id}/tasks`, {
+      form: {
+        action_method: action,
+        action_data: data || '',
+        minute: minute ?? '0',
+        hour: hour ?? '*',
+        day: day ?? '*',
+        month: month ?? '*',
+        weekday: weekday ?? '*',
+      },
+    });
+    res.json({ ok: true, message: j.message || 'Task created.' });
+  })
+);
+
+app.delete(
+  '/api/tasks/:taskId',
+  wrap(async (req, res) => {
+    const id = requireService();
+    const j = await client.del(`/services/${id}/tasks/${encodeURIComponent(req.params.taskId)}`);
+    res.json({ ok: true, message: j.message || 'Task deleted.' });
+  })
+);
+
+/* ------------------------------------------------------------------ worlds */
+
+app.get(
+  '/api/worlds',
+  wrap(async (req, res) => {
+    const id = requireService();
+    const status = await fetchServerStatus(id);
+    const savedata = status?.server?.savedataPath;
+    if (!savedata) {
+      return res.json({ savedata: null, activeWorld: null, worlds: [], legacy: [], mismatch: false });
+    }
+
+    // Worlds live INSIDE worlds_local/ — one folder each since Valheim 1.0, or a
+    // .db/.fwl pair before that.
+    const worldsDir = posix.join(savedata, 'worlds_local');
+    const list = await client
+      .get(`/services/${id}/gameservers/file_server/list`, { query: { dir: worldsDir, summarize_folders: true } })
+      .catch(tolerate([404, 500]));
+
+    const entries = list?.data?.entries || [];
+    const worlds = entries
+      .filter((e) => e.type === 'dir')
+      .map((e) => ({ name: e.name, path: e.path, size: e.size ?? null, modifiedAt: e.modified_at ?? null }));
+
+    // Pre-1.0 worlds were a .db/.fwl pair rather than a folder.
+    const legacy = entries
+      .filter((e) => e.type === 'file' && /\.(db|fwl)(\.old)?$/i.test(e.name))
+      .map((e) => ({ name: e.name, path: e.path, size: e.size ?? null, modifiedAt: e.modified_at ?? null }));
+
+    const activeWorld = status?.valheim?.currentWorld || null;
+    res.json({
+      savedata,
+      activeWorld,
+      worlds,
+      legacy,
+      // The configured world must match a folder exactly, or Valheim silently
+      // generates a brand new world under that name.
+      mismatch: Boolean(activeWorld) && worlds.length > 0 && !worlds.some((w) => w.name === activeWorld),
+    });
+  })
+);
+
+/* ------------------------------------------------------------- raw list files
+ * The player list API and the files Valheim actually reads can disagree, so
+ * expose the raw files too — they are what really grants admin. */
+
+app.get(
+  '/api/players/raw',
+  wrap(async (req, res) => {
+    const id = requireService();
+    const status = await fetchServerStatus(id);
+    const savedata = status?.server?.savedataPath;
+    const files = ['adminlist.txt', 'bannedlist.txt', 'permittedlist.txt'];
+
+    if (!savedata) return res.json({ files: [] });
+
+    const out = [];
+    for (const name of files) {
+      const file = posix.join(savedata, name);
+      try {
+        const { content } = await readServerFile(id, file, { maxBytes: 64 * 1024 });
+        out.push({ name, path: file, content });
+      } catch (err) {
+        out.push({ name, path: file, content: null, error: err.message });
+      }
+    }
+    res.json({ savedata, files: out });
+  })
+);
+
+/* --------------------------------------------------------------- log sources */
+
+app.get(
+  '/api/logs/sources',
+  wrap(async (req, res) => {
+    const status = await fetchServerStatus(requireService());
+    const server = status?.server || {};
+    const sources = [...(server.logFiles || [])];
+
+    // Nitrado writes start/stop events to restart.log next to the game folder,
+    // and it is usually the only log a Valheim service actually has.
+    if (server.restartLogPath && !sources.some((s) => s.path === server.restartLogPath)) {
+      sources.push({ name: 'restart.log', path: server.restartLogPath, nitrado: true });
+    }
+    res.json({
+      sources,
+      hasConsole: Boolean(server.features?.has_application_server),
+      hasContainerConsole: Boolean(server.features?.has_container_websocket),
+    });
   })
 );
 

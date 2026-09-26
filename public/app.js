@@ -95,6 +95,14 @@ const state = {
   settingMeta: new Map(),
   dirty: new Map(),
   players: null,
+  playersRaw: null,
+  logSources: [],
+  hasConsole: false,
+  hasContainerConsole: false,
+  backups: null,
+  worlds: null,
+  tasks: null,
+  notifications: [],
   activity: { page: 1, pageCount: 1 },
   logPath: null,
   logCustom: false,
@@ -516,6 +524,7 @@ async function refreshServer({ silent = false } = {}) {
           if (state.tab === 'dashboard') renderCharts();
         })
         .catch(() => {});
+      refreshNotifications();
     }
   } catch (err) {
     if (err.status === 401) {
@@ -1036,14 +1045,32 @@ function renderPlayers() {
 
 async function addToList(listName) {
   const input = $(`[data-add-input="${listName}"]`);
-  const value = input.value.trim();
-  if (!value) return;
-  const identifiers = value.split(/[,;]/).map((s) => s.trim()).filter(Boolean);
+  const raw = input.value.trim();
+  if (!raw) return;
+
+  const parts = raw.split(/[,;]/).map((s) => s.trim()).filter(Boolean);
+  const ids = parts.map((p) => normalizePlayerId(p));
+  const warnings = ids.map((i) => i.warning).filter(Boolean);
+  const identifiers = ids.map((i) => i.value);
+
+  if (warnings.length) {
+    const proceed = confirm(`${warnings.join('\n\n')}\n\nAdd anyway?`);
+    if (!proceed) return;
+  }
+
+  if (listName === 'whitelist') {
+    const ok = confirm(
+      'Adding anyone to the whitelist makes the server invite-only — every player NOT on this list is blocked from joining.\n\nContinue?'
+    );
+    if (!ok) return;
+  }
+
   try {
     const res = await api(`/api/players/lists/${listName}`, { method: 'POST', body: { identifiers } });
-    toast(res.message || `Added to ${LIST_LABELS[listName]}.`, 'ok');
+    const prefixed = ids.find((i) => i.changed);
+    toast(prefixed ? `${res.message} (${prefixed.warning})` : res.message || `Added to ${LIST_LABELS[listName]}.`, 'ok', prefixed ? 8000 : 4500);
     input.value = '';
-    await refreshPlayers();
+    await Promise.all([refreshPlayers(), refreshPlayersRaw({ silent: true })]);
   } catch (err) {
     toast(err.message, 'error');
   }
@@ -1053,30 +1080,436 @@ async function removeFromList(listName, identifier) {
   try {
     await api(`/api/players/lists/${listName}`, { method: 'DELETE', body: { identifiers: [identifier] } });
     toast(`Removed from ${LIST_LABELS[listName]}.`, 'ok');
-    await refreshPlayers();
+    await Promise.all([refreshPlayers(), refreshPlayersRaw({ silent: true })]);
   } catch (err) {
     toast(err.message, 'error');
   }
 }
 
+/**
+ * Valheim wants [Platform]_[UserID] (e.g. Steam_76561197960287930), copied from
+ * the in-game F2 panel. Bare 17-digit SteamID64s are a common paste and silently
+ * fail, so offer to add the prefix.
+ */
+function normalizePlayerId(raw) {
+  const value = String(raw || '').trim();
+  if (!value) return { value, warning: null };
+  if (/^[A-Za-z]+_\d+$/.test(value)) return { value, warning: null };
+  if (/^\d{17}$/.test(value)) {
+    return { value: `Steam_${value}`, warning: `Added the Steam_ prefix — Valheim needs the platform prefix, not a bare ID.`, changed: true };
+  }
+  if (/^\d{5,}$/.test(value)) {
+    return { value, warning: 'No platform prefix. Valheim normally wants Steam_<id> or V_<id> — check the F2 panel.', changed: false };
+  }
+  return { value, warning: `"${value}" does not look like a platform ID. Admin rights will not apply to it.`, changed: false };
+}
+
+async function refreshPlayersRaw({ silent = false } = {}) {
+  try {
+    state.playersRaw = await api('/api/players/raw');
+    renderPlayersRaw();
+  } catch (err) {
+    if (!silent) toast(err.message, 'error');
+  }
+}
+
+function renderPlayersRaw() {
+  const data = state.playersRaw;
+  const box = $('#raw-lists');
+  box.textContent = '';
+  if (!data) return;
+
+  if (data.savedata) $('#raw-savedata').textContent = `${data.savedata}/`;
+
+  for (const file of data.files || []) {
+    const body = file.content === null
+      ? el('div', { class: 'empty' }, `Could not read it: ${file.error}`)
+      : el('pre', { class: 'log-view', style: 'max-height:150px' }, file.content.trim() || '(empty)');
+
+    // Flag entries that cannot possibly be a platform ID — Valheim will ignore them.
+    const suspicious = (file.content || '')
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l && !l.startsWith('//'))
+      .filter((l) => !/^[A-Za-z]+_\d+$/.test(l));
+
+    const card = el('div', { class: 'raw-file' });
+    card.append(el('div', { class: 'card-head' }, el('h2', {}, file.name), el('span', { class: 'muted small mono' }, file.path)));
+    card.append(body);
+    if (suspicious.length) {
+      card.append(
+        el('div', { class: 'alert warn' },
+          `${suspicious.length} entr${suspicious.length === 1 ? 'y' : 'ies'} will be ignored by Valheim because they are not in ` +
+          `[Platform]_[UserID] form: ${suspicious.slice(0, 4).join(', ')}${suspicious.length > 4 ? '…' : ''}`
+        )
+      );
+    }
+    box.append(card);
+  }
+}
+
 /* --------------------------------------------------------------------- logs */
+
+async function loadLogSources() {
+  try {
+    const data = await api('/api/logs/sources');
+    state.logSources = data.sources || [];
+    state.hasConsole = Boolean(data.hasConsole);
+    state.hasContainerConsole = Boolean(data.hasContainerConsole);
+  } catch {
+    state.logSources = [];
+    state.hasConsole = false;
+  }
+  buildLogFileOptions();
+  toggleCustomLogInput();
+}
 
 function buildLogFileOptions() {
   const select = $('#log-file-select');
   select.textContent = '';
-  const files = state.server?.server?.logFiles || [];
+  const files = state.logSources || [];
 
   if (!files.length) {
     select.append(el('option', { value: '' }, 'No log files reported — enter a path below'));
   }
   for (const file of files) {
-    select.append(el('option', { value: file.path }, file.name || file.path));
+    const label = file.nitrado ? `${file.name} (Nitrado)` : file.name || file.path;
+    select.append(el('option', { value: file.path }, label));
   }
   select.append(el('option', { value: '__custom__' }, 'Custom path…'));
 
   const preferred = files[0]?.path || '';
   select.value = state.logPath && files.some((f) => f.path === state.logPath) ? state.logPath : preferred;
   state.logPath = select.value === '__custom__' ? state.logPath : select.value;
+}
+
+/**
+ * Valheim has no RCON and Nitrado reports has_application_server:false for it,
+ * so there is no command channel. Show what actually works instead of a box
+ * that silently does nothing.
+ */
+function renderConsolePanel() {
+  const body = $('#console-body');
+  const note = $('#console-note');
+  body.textContent = '';
+
+  if (state.hasConsole) {
+    note.textContent = 'Send a command to the running server';
+    const row = el('div', { class: 'console-row' });
+    const input = el('input', { id: 'console-input', class: 'mono', placeholder: 'e.g. save   ·   help   ·   info', spellcheck: 'false' });
+    const button = el('button', { id: 'console-send', class: 'btn btn-primary' }, el('span', { html: '<svg class="ico"><use href="#i-send"/></svg>' }), ' Send');
+    row.append(input, button);
+    body.append(row, el('div', { id: 'console-log', class: 'muted small' }));
+    button.addEventListener('click', sendCommand);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') sendCommand();
+    });
+    return;
+  }
+
+  note.textContent = 'No command channel on this service';
+  body.append(
+    el('div', { class: 'alert info', style: 'margin-bottom:14px' },
+      'Valheim has no RCON, and Nitrado reports no application console for this service, so commands cannot be sent from here. ' +
+      'Admin commands have to be run in-game: press F5, and your ID must be on the admin list below.'
+    )
+  );
+
+  const commands = [
+    ['save', 'Force an immediate world save. The safest thing to run before a restart.'],
+    ['kick <name|steamid>', 'Remove a player from the server.'],
+    ['ban <name|steamid>', 'Ban a player.'],
+    ['unban <name|steamid>', 'Lift a ban.'],
+    ['banned', 'List every banned player.'],
+    ['setworldmodifier <name> <value>', 'Change one world dial live, without a restart.'],
+    ['setworldpreset <name>', 'Apply a preset live, resetting the others.'],
+    ['resetworldkeys', 'Reset world modifiers to default. Leaves boss progress alone.'],
+  ];
+  const card = el('div', { class: 'group-block' });
+  card.append(el('div', { class: 'card-head' }, el('h2', {}, 'Admin commands that do work'), el('span', { class: 'muted small' }, 'run in-game with F5')));
+  const table = el('table', { class: 'file-table' });
+  table.append(el('thead', {}, el('tr', {}, el('th', {}, 'Command'), el('th', {}, 'What it does'))));
+  const tbody = el('tbody');
+  for (const [cmd, desc] of commands) {
+    tbody.append(el('tr', {}, el('td', { class: 'mono' }, cmd), el('td', { class: 'muted' }, desc)));
+  }
+  table.append(tbody);
+  card.append(table);
+  body.append(card);
+
+  body.append(
+    el('p', { class: 'muted small', style: 'margin-top:12px' },
+      'Cheat commands (spawn, god, fly) are refused by every vanilla dedicated server, admin or not. ' +
+      'Only a mod such as Server devcommands can unlock them.'
+    )
+  );
+}
+
+async function refreshNotifications() {
+  try {
+    const data = await api('/api/notifications');
+    state.notifications = data.notifications || [];
+    renderNotifications();
+  } catch {
+    /* notifications are optional; never block the dashboard on them */
+  }
+}
+
+function renderNotifications() {
+  const box = $('#notifications');
+  box.textContent = '';
+  const items = (state.notifications || []).filter((n) => !n.dismissed);
+  box.classList.toggle('hidden', items.length === 0);
+  if (!items.length) return;
+
+  const rank = { SEVERE: 0, ERROR: 0, WARNING: 1, WARN: 1, INFO: 2, SUCCESS: 3, DEBUG: 4 };
+  items
+    .slice()
+    .sort((a, b) => (rank[a.level] ?? 2) - (rank[b.level] ?? 2))
+    .forEach((n) => {
+      const kind = ['SEVERE', 'ERROR'].includes(n.level) ? 'error' : n.level === 'WARNING' ? 'warn' : 'info';
+      box.append(
+        el('div', { class: `alert ${kind}`, style: 'margin:0' },
+          el('strong', {}, n.level === 'SEVERE' ? 'Problem' : humanize(n.level.toLowerCase())),
+          ' — ', n.message,
+          n.messageLong ? el('div', { class: 'muted small' }, n.messageLong) : null
+        )
+      );
+    });
+}
+
+/* ---------------------------------------------------------------- backups */
+
+async function refreshBackups({ silent = false } = {}) {
+  const body = $('#backups-body');
+  try {
+    const data = await api('/api/backups');
+    state.backups = data;
+    renderBackups();
+  } catch (err) {
+    if (!silent) {
+      body.textContent = '';
+      body.append(el('div', { class: 'empty' }, `Could not load backups: ${err.message}`));
+    }
+  }
+}
+
+function renderBackups() {
+  const data = state.backups;
+  const body = $('#backups-body');
+  const note = $('#backups-note');
+  body.textContent = '';
+  if (!data) return;
+
+  const groups = data.groups || [];
+  note.textContent = data.maxManualBackups ? `${data.total} available · up to ${data.maxManualBackups} kept` : `${data.total} available`;
+
+  if (!data.total) {
+    body.append(
+      el('div', { class: 'empty' },
+        'No backups yet. Nitrado creates these on its own schedule once the server has been running — the API can restore them but cannot create one.'
+      )
+    );
+    return;
+  }
+
+  const restoreAllowed = data.restorePossible !== false;
+  for (const group of groups) {
+    const card = el('div', { class: 'group-block' });
+    card.append(
+      el('div', { class: 'card-head' },
+        el('h2', {}, group.kind === 'database' ? 'Database' : 'Game files'),
+        el('span', { class: 'muted small mono' }, group.folder)
+      )
+    );
+    const table = el('table', { class: 'file-table' });
+    table.append(el('thead', {}, el('tr', {}, el('th', {}, 'Taken'), el('th', {}, 'Type'), el('th', {}, 'Size'), el('th', {}, ''))));
+    const tbody = el('tbody');
+    for (const backup of group.backups) {
+      tbody.append(
+        el('tr', {},
+          el('td', {}, backup.timestamp ? fmtTime(backup.timestamp) : '—'),
+          el('td', { class: 'muted' }, backup.type || '—'),
+          el('td', { class: 'size' }, fmtBytes(backup.size)),
+          el('td', {},
+            el('button', {
+              class: 'btn btn-ghost btn-sm',
+              disabled: !restoreAllowed,
+              title: restoreAllowed ? 'Restore this backup — the server will stop and be rolled back' : 'Restore is not currently possible',
+              onclick: () => restoreBackup(group, backup),
+            }, 'Restore')
+          )
+        )
+      );
+    }
+    table.append(tbody);
+    card.append(table);
+    body.append(card);
+  }
+
+  if (!restoreAllowed) {
+    body.append(el('div', { class: 'alert warn' }, 'Nitrado reports that a restore is not possible right now.'));
+  }
+}
+
+async function restoreBackup(group, backup) {
+  const when = backup.timestamp ? fmtTime(backup.timestamp) : `#${backup.number}`;
+  if (!confirm(`Restore the backup from ${when}?\n\nThe server will be stopped and rolled back to that point. Anything built since then is lost.`)) return;
+  try {
+    const res = await api('/api/backups/restore', { method: 'POST', body: { folder: group.folder, backup: backup.number, kind: group.kind } });
+    toast(res.message || 'Restore started.', 'ok');
+    setTimeout(() => refreshServer({ silent: true }), 2000);
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+/* ----------------------------------------------------------------- worlds */
+
+async function refreshWorlds() {
+  try {
+    const data = await api('/api/worlds');
+    state.worlds = data;
+    renderWorlds();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+function renderWorlds() {
+  const data = state.worlds;
+  const tbody = $('#worlds-list');
+  tbody.textContent = '';
+  if (!data) return;
+
+  $('#worlds-note').textContent = data.savedata ? data.savedata : '';
+
+  const alert = $('#worlds-alert');
+  if (data.mismatch) {
+    alert.textContent =
+      `The World name setting is "${data.activeWorld}", but no folder with that name exists in worlds_local. ` +
+      'The server will generate a brand new world under that name on next start instead of loading an existing one.';
+    alert.className = 'alert warn';
+  } else {
+    alert.className = 'alert warn hidden';
+  }
+
+  if (!data.worlds?.length && !data.legacy?.length) {
+    tbody.append(el('tr', {}, el('td', { colspan: 4, class: 'muted' }, 'No worlds found in savedata/worlds_local.')));
+    return;
+  }
+
+  for (const world of data.worlds || []) {
+    const active = world.name === data.activeWorld;
+    tbody.append(
+      el('tr', {},
+        el('td', {}, el('span', { class: 'mono' }, world.name), active ? el('span', { class: 'badge ok', style: 'margin-left:8px' }, 'active') : null),
+        el('td', { class: 'size' }, world.size ? fmtBytes(world.size) : '—'),
+        el('td', { class: 'mod' }, world.modifiedAt ? fmtTime(world.modifiedAt) : '—'),
+        el('td', {}, el('button', { class: 'btn btn-ghost btn-sm', onclick: () => refreshFiles(world.path) }, 'Browse'))
+      )
+    );
+  }
+
+  for (const file of data.legacy || []) {
+    tbody.append(
+      el('tr', {},
+        el('td', {}, el('span', { class: 'mono' }, file.name), el('span', { class: 'badge warn', style: 'margin-left:8px' }, 'pre-1.0')),
+        el('td', { class: 'size' }, fmtBytes(file.size)),
+        el('td', { class: 'mod' }, file.modifiedAt ? fmtTime(file.modifiedAt) : '—'),
+        el('td', {}, '')
+      )
+    );
+  }
+}
+
+/* ------------------------------------------------------------------ tasks */
+
+async function refreshTasks() {
+  try {
+    const data = await api('/api/tasks');
+    state.tasks = data;
+    renderTasks();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+function describeCron(cron) {
+  const pad = (v) => String(v).padStart(2, '0');
+  if (cron.day === '*' && cron.month === '*' && cron.weekday === '*') {
+    return `Every day at ${pad(cron.hour)}:${pad(cron.minute)}`;
+  }
+  return `At ${pad(cron.minute)} ${cron.hour} on day ${cron.day}/${cron.month}`;
+}
+
+function renderTasks() {
+  const data = state.tasks;
+  const list = $('#tasks-list');
+  const select = $('#task-action');
+  list.textContent = '';
+  if (!data) return;
+
+  $('#tasks-note').textContent = data.tasks?.length ? `${data.tasks.length} scheduled` : '';
+
+  select.textContent = '';
+  for (const action of data.actions || []) {
+    select.append(el('option', { value: action.method }, action.description));
+  }
+
+  if (!data.tasks?.length) {
+    list.append(el('li', { class: 'muted small' }, 'No scheduled tasks. Add a daily restart below — it is worth having one.'));
+    return;
+  }
+
+  for (const task of data.tasks) {
+    const action = (data.actions || []).find((a) => a.method === task.action)?.description || humanize(task.action || 'task');
+    list.append(
+      el('li', {},
+        el('div', {},
+          el('div', {}, el('strong', {}, action), task.data ? el('span', { class: 'muted small' }, ` — ${task.data}`) : null),
+          el('div', { class: 'id' }, `${describeCron(task.cron)} · ${task.timezone || 'server time'}${task.nextRun ? ` · next ${fmtTime(task.nextRun)}` : ''}`)
+        ),
+        el('div', { class: 'row-actions' },
+          el('span', { class: `badge ${task.status === 'active' ? 'ok' : 'warn'}` }, task.status),
+          el('button', { class: 'icon-btn', title: 'Delete this task', onclick: () => deleteTask(task) }, el('span', { html: '<svg class="ico"><use href="#i-trash"/></svg>' }))
+        )
+      )
+    );
+  }
+}
+
+async function createTask() {
+  const action = $('#task-action').value;
+  const hour = String($('#task-hour').value || '5').trim();
+  const minute = String($('#task-minute').value || '0').trim();
+  const data = $('#task-data').value.trim();
+
+  if (!/^\d{1,2}$/.test(hour) || Number(hour) > 23) return toast('Hour must be 0-23.', 'error');
+  if (!/^\d{1,2}$/.test(minute) || Number(minute) > 59) return toast('Minute must be 0-59.', 'error');
+
+  try {
+    const res = await api('/api/tasks', {
+      method: 'POST',
+      body: { action, data, minute, hour, day: '*', month: '*', weekday: '*' },
+    });
+    toast(`${res.message} Runs daily at ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}.`, 'ok');
+    $('#task-data').value = '';
+    await refreshTasks();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+async function deleteTask(task) {
+  if (!confirm('Delete this scheduled task?')) return;
+  try {
+    await api(`/api/tasks/${encodeURIComponent(task.id)}`, { method: 'DELETE' });
+    toast('Task deleted.', 'ok');
+    await refreshTasks();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
 }
 
 function toggleCustomLogInput() {
@@ -1168,6 +1601,7 @@ async function refreshActivity(page = state.activity.page) {
 
 async function sendCommand() {
   const input = $('#console-input');
+  if (!input) return;
   const command = input.value.trim();
   if (!command) return;
   try {
@@ -1178,6 +1612,13 @@ async function sendCommand() {
     input.value = '';
     toast('Command sent. Output appears in the server log above.', 'ok');
   } catch (err) {
+    if (err.status === 409) {
+      // Nitrado says there is no command channel — swap to the honest view.
+      state.hasConsole = false;
+      renderConsolePanel();
+      toast(err.message, 'warn', 9000);
+      return;
+    }
     toast(err.message, 'error');
   }
 }
@@ -1274,7 +1715,8 @@ const TAB_META = {
   dashboard: ['Dashboard', 'Control and monitor your Valheim server'],
   settings: ['Server settings', 'Edit the settings Nitrado applies to your server'],
   players: ['Players & admins', 'See who is online and manage admin, ban and whitelist entries'],
-  logs: ['Logs & console', 'Server console, log files and activity history'],
+  backups: ['Backups & schedule', 'World backups, world files and scheduled restarts'],
+  logs: ['Logs', 'Server and Nitrado activity history'],
   files: ['Files', 'Browse and edit files on the server'],
 };
 
@@ -1297,12 +1739,21 @@ async function onTabEnter(tab) {
     state.loadedTabs.add('settings');
     await refreshSettings();
   }
-  if (tab === 'players') await refreshPlayers({ silent: true });
+  if (tab === 'players') {
+    await refreshPlayers({ silent: true });
+    if (!state.playersRaw) await refreshPlayersRaw({ silent: true });
+  }
+  if (tab === 'backups') {
+    if (!state.loadedTabs.has('backups')) {
+      state.loadedTabs.add('backups');
+      await Promise.all([refreshWorlds(), refreshBackups(), refreshTasks()]);
+    }
+  }
   if (tab === 'logs') {
     if (!state.loadedTabs.has('logs')) {
       state.loadedTabs.add('logs');
-      buildLogFileOptions();
-      toggleCustomLogInput();
+      await loadLogSources();
+      renderConsolePanel();
     }
     await Promise.all([refreshLogFile({ silent: true }), refreshActivity()]);
   }
@@ -1391,6 +1842,11 @@ function wireEvents() {
     })
   );
   $$('[data-load="players"]').forEach((b) => b.addEventListener('click', () => refreshPlayers()));
+  $$('[data-load="players-raw"]').forEach((b) => b.addEventListener('click', () => refreshPlayersRaw()));
+  $$('[data-load="backups"]').forEach((b) => b.addEventListener('click', () => refreshBackups()));
+  $$('[data-load="worlds"]').forEach((b) => b.addEventListener('click', () => refreshWorlds()));
+  $$('[data-load="tasks"]').forEach((b) => b.addEventListener('click', () => refreshTasks()));
+  $('#task-create').addEventListener('click', createTask);
 
   // logs
   $('#log-refresh').addEventListener('click', () => refreshLogFile());
@@ -1402,10 +1858,8 @@ function wireEvents() {
   });
   $('#activity-prev').addEventListener('click', () => refreshActivity(Math.max(1, state.activity.page - 1)));
   $('#activity-next').addEventListener('click', () => refreshActivity(state.activity.page + 1));
-  $('#console-send').addEventListener('click', sendCommand);
-  $('#console-input').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') sendCommand();
-  });
+  // The console box is built by renderConsolePanel() and wires its own handlers,
+  // because for Valheim there is no command channel at all.
 
   // files
   $('#files-refresh').addEventListener('click', () => refreshFiles());

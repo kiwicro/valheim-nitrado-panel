@@ -17,8 +17,9 @@ when the panel calls Nitrado directly.
 | --- | --- |
 | **Dashboard** | Live status (running / stopped / restarting…), one-click **Start**, **Restart**, **Stop**, players-online bar, world, connect address, server facts, 24h CPU / memory / player charts. |
 | **Server settings** | Edits the settings Nitrado exposes for your server (server name, password, world, public, crossplay, save interval, world modifiers…). Renders whatever your service actually returns, grouped by category. |
-| **Players & admins** | Who is online right now, plus add/remove entries in the **admin**, **ban** and **whitelist** lists. |
-| **Logs & console** | Send a live console command, tail the server log file with auto-refresh, and browse Nitrado's activity log (restarts, edits…). |
+| **Players & admins** | Who is online right now, add/remove **admin**, **ban** and **whitelist** entries, and see the raw list files Valheim actually reads. |
+| **Backups & schedule** | Worlds found in `worlds_local/`, Nitrado's world backups (with restore), and the cron-style scheduled tasks that handle daily restarts. |
+| **Logs** | Nitrado's activity history plus the server log files (for Valheim, `restart.log`). |
 | **Files** | Browse the server filesystem, open a text file, edit and save it (useful for `valheim_plus.cfg`-style configs). |
 
 ---
@@ -125,6 +126,37 @@ Two safety rules worth knowing:
 
 Anything not listed still renders with a tidy name generated from the key and a
 "no description yet" tooltip, so nothing is ever invisible.
+
+## Valheim specifics the panel handles
+
+These were verified against a real Nitrado Valheim service rather than assumed
+from documentation, and they are the things most guides get wrong.
+
+- **Valheim has no RCON.** Nitrado reports `has_application_server: false` for
+  Valheim, so there is no command channel. Admin commands (`save`, `kick`,
+  `ban`, `setworldmodifier`, `setworldpreset`, `resetworldkeys`) must be run
+  in-game from the F5 console by someone on the admin list. The Logs tab shows
+  the command reference instead of a box that would silently do nothing.
+- **Cheat commands do not work on dedicated servers**, admin or not — `spawn`,
+  `god` and `fly` are refused by vanilla. Only a mod such as Server devcommands
+  unlocks them.
+- **Player IDs need a platform prefix**: `Steam_76561197960287930`, not a bare
+  17-digit ID, and case-sensitive. The panel detects a pasted bare SteamID and
+  offers to add the prefix, and flags entries that cannot be valid.
+- **The whitelist blocks everyone else.** `permittedlist.txt` is an allowlist —
+  adding one name makes the server invite-only. The panel confirms before
+  writing to it.
+- **Valheim 1.0 worlds are folders.** `savedata/worlds_local/<WorldName>/`,
+  not a `.db`/`.fwl` pair. The **World name** setting must match a folder
+  exactly, or the server quietly generates a fresh world under that name — the
+  Backups tab warns when it does not match.
+- **World modifiers use `default`**, not `normal`, to mean "let the preset
+  decide". The dropdowns send Nitrado's own casing.
+- **Daily restarts are a scheduled task**, not a setting. They live in the
+  Backups & schedule tab and are fully editable.
+- **Backups can be listed and restored, but not created** through the API.
+  Nitrado takes them on its own schedule; use the web interface for an
+  on-demand one.
 
 ## Security
 

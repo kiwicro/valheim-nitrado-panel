@@ -363,3 +363,17 @@ select { cursor: pointer; }
 @keyframes slidein { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
 
 .loading { color: var(--muted); font-size: 13px; padding: 14px 2px; }
+
+/* --------------------------------------------------- backups / worlds / tasks */
+.stack { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
+.group-block { margin-bottom: 18px; }
+.group-block:last-child { margin-bottom: 0; }
+.group-block .card-head h2 { font-size: 13px; }
+.select { width: auto; min-width: 170px; }
+.raw-lists { display: flex; flex-direction: column; gap: 16px; }
+.raw-file { border: 1px solid var(--border-soft); border-radius: var(--radius-sm); padding: 12px 14px; }
+.raw-file .card-head { margin-bottom: 8px; }
+.add-row input[type="number"] { max-width: 84px; }
+.add-row .btn { white-space: nowrap; }
+.alert.small { font-size: 12px; padding: 8px 11px; line-height: 1.45; }
+.badge + .badge { margin-left: 6px; }
