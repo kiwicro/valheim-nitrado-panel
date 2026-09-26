@@ -402,6 +402,14 @@ function renderDashboard() {
     ['Host', server.hostSystems?.linux?.hostname || Object.values(server.hostSystems || {})[0]?.hostname || '—'],
     ['World file', valheim?.currentWorld || '—'],
     ['Server root', server.rootPath || '—'],
+    [
+      'Mods',
+      valheim
+        ? [valheim.bepinex ? 'BepInEx installed' : 'BepInEx not installed', valheim.valheimPlus ? 'ValheimPlus' : null]
+            .filter(Boolean)
+            .join(' · ')
+        : '—',
+    ],
     ['Query', server.query?.version || '—'],
     ['FTP host', server.credentials?.ftp?.hostname || '—'],
   ];
@@ -1889,8 +1897,13 @@ async function renderQuickFiles() {
   const server = state.server?.server;
   const shortcuts = [];
   if (server?.rootPath) shortcuts.push({ label: 'Server root', path: server.rootPath });
-  for (const file of server?.configFiles || []) shortcuts.push({ label: `⚙ ${file.name}`, path: file.path });
+  if (server?.savedataPath) {
+    shortcuts.push({ label: 'savedata', path: server.savedataPath });
+    shortcuts.push({ label: 'worlds_local', path: `${server.savedataPath}/worlds_local` });
+    shortcuts.push({ label: 'adminlist.txt', path: `${server.savedataPath}/adminlist.txt` });
+  }
   for (const file of server?.logFiles || []) shortcuts.push({ label: `≡ ${file.name}`, path: file.path });
+  if (server?.restartLogPath) shortcuts.push({ label: '≡ restart.log', path: server.restartLogPath });
 
   if (!shortcuts.length) {
     container.append(el('span', { class: 'muted small' }, 'No config or log shortcuts reported by Nitrado.'));
