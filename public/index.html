@@ -203,6 +203,24 @@
         <!-- Players -->
         <section class="tab-panel" data-panel="players">
           <div class="card">
+            <div class="card-head">
+              <h2>Known players</h2>
+              <div class="row-actions">
+                <span id="known-note" class="muted small"></span>
+                <button class="btn btn-ghost btn-sm" data-load="players"><svg class="ico"><use href="#i-refresh"/></svg> Refresh</button>
+              </div>
+            </div>
+            <p class="muted small">
+              Everyone Nitrado has seen on this server, with the platform ID Valheim actually needs. Use these rather
+              than guessing from a display name — Steam does not offer name lookups. Add one straight to a list:
+            </p>
+            <table class="file-table">
+              <thead><tr><th>Player</th><th>Platform ID</th><th>Status</th><th></th></tr></thead>
+              <tbody id="known-players"></tbody>
+            </table>
+          </div>
+
+          <div class="card">
             <div class="card-head"><h2>Online players</h2><button class="btn btn-ghost btn-sm" data-load="players"><svg class="ico"><use href="#i-refresh"/></svg> Refresh</button></div>
             <div id="online-players" class="online-list"></div>
           </div>

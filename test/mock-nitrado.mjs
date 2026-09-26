@@ -59,8 +59,11 @@ const settings = {
 };
 
 const lists = {
-  adminlist: [{ name: 'demo_user', id: 'demo_user', id_type: 'demo_user' }],
-  banlist: [],
+  adminlist: [
+    { name: 'demo_user', id: 'demo_user', id_type: 'demo_user' },
+    { name: 'Kjell', id: 'Steam_76561197960287930', id_type: 'steam' },
+  ],
+  banlist: [{ name: 'Griefer', id: 'Steam_76561198000000099', id_type: 'steam' }],
   whitelist: [],
 };
 
@@ -72,8 +75,8 @@ const LIST_HEADERS = {
 
 const files = new Map([
   [`${FTPROOT}restart.log`, '2026-09-26 09:48:07 Stopping server (NITRAPI)\n'],
-  [`${SAVEDATA}adminlist.txt`, `${LIST_HEADERS['adminlist.txt']}demo_user\n`],
-  [`${SAVEDATA}bannedlist.txt`, LIST_HEADERS['bannedlist.txt']],
+  [`${SAVEDATA}adminlist.txt`, `${LIST_HEADERS['adminlist.txt']}demo_user\nSteam_76561197960287930\n`],
+  [`${SAVEDATA}bannedlist.txt`, `${LIST_HEADERS['bannedlist.txt']}Steam_76561198000000099\n`],
   [`${SAVEDATA}permittedlist.txt`, LIST_HEADERS['permittedlist.txt']],
   [`${WORLDS}Dedicated/_main.1.fwl2`, 'seed:1234567890'],
   [`${WORLDS}Dedicated/_main.1.db2`, '<binary world data>'],
@@ -445,7 +448,19 @@ const server = http.createServer(async (req, res) => {
   if (rest === '/gameservers/games/players/lists') {
     return send(res, 200, { status: 'success', data: { player_lists: ['whitelist', 'adminlist', 'banlist'], player_id_type: 'steam' } });
   }
-  if (rest === '/gameservers/games/players') return send(res, 200, { status: 'success', data: { players: [] } });
+  if (rest === '/gameservers/games/players') {
+    return send(res, 200, {
+      status: 'success',
+      data: {
+        players: [
+          { name: 'Kjell', id: 'Steam_76561197960287930', id_type: 'steam', online: 'true' },
+          { name: 'Astrid', id: 'Steam_76561198000000042', id_type: 'steam', online: 'true' },
+          { name: 'Griefer', id: 'Steam_76561198000000099', id_type: 'steam', online: 'false' },
+          { name: 'Mystery Guest', id: 'not-a-platform-id', id_type: 'steam', online: 'false' },
+        ],
+      },
+    });
+  }
 
   const listMatch = rest.match(/^\/gameservers\/games\/(adminlist|banlist|whitelist)$/);
   if (listMatch) {

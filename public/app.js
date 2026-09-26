@@ -1000,6 +1000,8 @@ function renderPlayers() {
   const data = state.players;
   if (!data) return;
 
+  renderKnownPlayers(data);
+
   const container = $('#online-players');
   container.textContent = '';
   const online = data.online || [];
@@ -1048,6 +1050,84 @@ function renderPlayers() {
         )
       );
     }
+  }
+}
+
+/**
+ * Players Nitrado has seen, with the platform ID Valheim needs. This is the
+ * practical answer to "what is this player's SteamID" — there is no Steam API
+ * to search by display name, but Nitrado already stores the mapping for anyone
+ * who has joined.
+ */
+function renderKnownPlayers(data) {
+  const tbody = $('#known-players');
+  if (!tbody) return;
+  tbody.textContent = '';
+
+  const players = data.players || [];
+  const adminIds = new Set((data.adminlist || []).flatMap((e) => [e.id, e.name].filter(Boolean)));
+  const banIds = new Set((data.banlist || []).flatMap((e) => [e.id, e.name].filter(Boolean)));
+  const onlineNames = new Set((data.online || []).map((p) => p.name));
+
+  $('#known-note').textContent = players.length ? `${players.length} seen` : '';
+
+  if (!players.length) {
+    tbody.append(
+      el('tr', {}, el('td', { colspan: 4, class: 'muted' },
+        'Nobody yet. Nitrado fills this in once players have joined — each person\'s platform ID appears after their first connection.'
+      ))
+    );
+    return;
+  }
+
+  for (const player of players) {
+    const id = player.id || player.name || '';
+    const looksValid = /^[A-Za-z]+_\d+$/.test(id);
+    const online = player.online === 'true' || player.online === true || onlineNames.has(player.name);
+    const isAdmin = adminIds.has(id);
+    const isBanned = banIds.has(id);
+
+    const actions = el('div', { class: 'row-actions' });
+    if (looksValid) {
+      actions.append(
+        el('button', {
+          class: 'btn btn-ghost btn-sm',
+          onclick: () => (isAdmin ? removeFromList('adminlist', id) : addIdentifierToList('adminlist', id)),
+        }, isAdmin ? 'Remove admin' : 'Make admin'),
+        el('button', {
+          class: 'btn btn-ghost btn-sm',
+          onclick: () => (isBanned ? removeFromList('banlist', id) : addIdentifierToList('banlist', id)),
+        }, isBanned ? 'Unban' : 'Ban')
+      );
+    } else {
+      actions.append(el('span', { class: 'muted small' }, 'ID unusable'));
+    }
+
+    tbody.append(
+      el('tr', {},
+        el('td', {},
+          el('div', { class: 'name' },
+            el('span', { class: 'avatar' }, String(player.name || '?').slice(0, 1).toUpperCase()),
+            el('span', {}, player.name || '(unnamed)'),
+            isAdmin ? el('span', { class: 'badge ok', style: 'margin-left:6px' }, 'admin') : null,
+            isBanned ? el('span', { class: 'badge warn', style: 'margin-left:6px' }, 'banned') : null
+          )
+        ),
+        el('td', { class: 'mono' }, id || '—'),
+        el('td', { class: 'muted' }, online ? 'online' : 'offline'),
+        el('td', {}, actions)
+      )
+    );
+  }
+}
+
+async function addIdentifierToList(listName, identifier) {
+  try {
+    const res = await api(`/api/players/lists/${listName}`, { method: 'POST', body: { identifiers: [identifier] } });
+    toast(res.message || `Added to ${LIST_LABELS[listName]}.`, 'ok');
+    await Promise.all([refreshPlayers(), refreshPlayersRaw({ silent: true })]);
+  } catch (err) {
+    toast(err.message, 'error');
   }
 }
 

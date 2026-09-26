@@ -377,3 +377,10 @@ select { cursor: pointer; }
 .add-row .btn { white-space: nowrap; }
 .alert.small { font-size: 12px; padding: 8px 11px; line-height: 1.45; }
 .badge + .badge { margin-left: 6px; }
+.file-table .name .avatar {
+  width: 22px; height: 22px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), #8a6520);
+  display: grid; place-items: center; font-size: 11px; font-weight: 700; color: #241b06;
+  flex: 0 0 auto;
+}
+.file-table .name { cursor: default; }
