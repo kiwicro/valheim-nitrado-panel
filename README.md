@@ -232,6 +232,40 @@ which are UDP.
 "visible to other players" map setting, so players who have switched it off do
 not appear.
 
+### Seeing only what players have uncovered
+
+Fog of war is a built-in plugin setting, controlled with **`tools/set-fog.mjs`**:
+
+| Mode | What the map shows |
+| --- | --- |
+| `off` | the entire world |
+| `trails` | only where players have walked |
+| `explored` | trails **plus** anything revealed through cartography tables — closest to the in-game map |
+
+```powershell
+node tools/set-fog.mjs explored        # hide the unexplored world
+node tools/set-fog.mjs explored --tint # translucent wash instead of a solid cover
+node tools/set-fog.mjs off             # reveal everything again
+node tools/set-fog.mjs                 # report the current setting
+```
+
+By default the unexplored area is a **solid cover** that also withholds region
+names, spawn and trader markers until somewhere is explored. `--tint` leaves the
+terrain faintly visible instead. The panel shows the active mode in the map
+tab's stat chips (`Fog of war: explored · hidden`).
+
+**Restart the server** for a change to take effect — the plugin reads its config
+at startup. The live state is also served at `/api/status` under `map.fog`, so
+the panel reports it rather than guessing.
+
+Because `locked` is `false` for the admin view, you can still switch fog off from
+the map's own controls for a quick look, without changing the server setting.
+
+**A fresh world will look nearly empty.** Fog shows what has been explored, so
+until players have actually covered ground the map is almost entirely blank —
+`Explored 0%` in the chips means exactly that. That is the feature working, not a
+fault.
+
 **The map is locked behind an access token.** Without it, the port returns
 `401 unauthorized` for the map page, every API and the console. See
 [Getting the live map working](#getting-the-live-map-working) below for how that
@@ -400,6 +434,7 @@ tools/
   install-mod.mjs Uploads a BepInEx mod release over FTP; --list, --plugin-only,
                   --remove
   set-livemap-token.mjs  Generates the live map token and writes the plugin config
+  set-fog.mjs            Sets the live map's fog of war (off / trails / explored)
   delete-world.mjs       Deletes an inactive world, refusing if it is the active
                          one or is not backed up
 assets/

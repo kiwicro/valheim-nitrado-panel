@@ -1735,11 +1735,15 @@ function renderLiveMap() {
   $('#livemap-open').href = `${viewUrl}/`;
   $('#livemap-open').classList.remove('hidden');
 
+  const fog = live.map?.fog;
+  const fogLabel = !fog || fog.mode === 'off' ? 'off (whole world)' : `${fog.mode}${fog.hide ? ' · hidden' : ' · tinted'}`;
+
   const rows = [
     ['Players', `${live.players ?? 0} / ${live.maxPlayers ?? '?'}`],
     ['In-game day', live.day ?? '—'],
     ['Time of day', live.timeOfDay != null ? fmtClock(live.timeOfDay) : '—'],
     ['Explored', live.exploredPct != null ? `${Math.round(live.exploredPct)}%` : '—'],
+    ['Fog of war', fogLabel],
     ['Uptime', live.uptimeSeconds != null ? fmtDuration(live.uptimeSeconds) : '—'],
     ['World', live.worldName || '—'],
   ];
