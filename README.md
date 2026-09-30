@@ -7,7 +7,7 @@ browser instead of clicking through the Nitrado web interface.
 Everything runs on your own PC. Your API token never leaves the machine except
 when the panel calls Nitrado directly.
 
-![tabs](https://img.shields.io/badge/tabs-Dashboard%20%C2%B7%20Settings%20%C2%B7%20Players%20%C2%B7%20Logs%20%C2%B7%20Files-e0a94a)
+![tabs](https://img.shields.io/badge/tabs-Dashboard%20%C2%B7%20Settings%20%C2%B7%20Players%20%C2%B7%20World%20map%20%C2%B7%20Backups%20%C2%B7%20Logs%20%C2%B7%20Files-e0a94a)
 
 ---
 
@@ -15,13 +15,13 @@ when the panel calls Nitrado directly.
 
 | Tab | What you get |
 | --- | --- |
-| **Dashboard** | Live status (running / stopped / restarting…), one-click **Start**, **Restart**, **Stop**, players-online bar, world, connect address, server facts, 24h CPU / memory / player charts. |
-| **Server settings** | Edits the settings Nitrado exposes for your server (server name, password, world, public, crossplay, save interval, world modifiers…). Renders whatever your service actually returns, grouped by category. |
-| **Players & admins** | Who is online right now, add/remove **admin**, **ban** and **whitelist** entries, and see the raw list files Valheim actually reads. |
+| **Dashboard** | Live status (running / stopped / restarting…), one-click **Start**, **Restart**, **Stop**, players-online bar, world, connect address, server facts, 24h CPU / memory / player charts, and any Nitrado warnings. |
+| **Server settings** | Edits the settings Nitrado exposes for your service (server name, password, world, public, crossplay, the difficulty preset, the five modifier dials and 13 world rules). Renders whatever your service actually returns, grouped into sections. |
+| **Players & admins** | Everyone Nitrado has seen, with their platform ID and one-click **Make admin** / **Ban**, plus the raw list files Valheim actually reads. |
+| **World map** | A **live map** of your world with player positions, served by the ValheimOne plugin on your server, plus an offline seed-generated map for when the server is stopped. |
 | **Backups & schedule** | Worlds found in `worlds_local/`, Nitrado's world backups (with restore), and the cron-style scheduled tasks that handle daily restarts. |
-| **World map** | Your whole world's terrain and points of interest, generated from the world seed. Read the honesty box on that tab — it is *not* a live map. |
-| **Logs** | Nitrado's activity history plus the server log files (for Valheim, `restart.log`). |
-| **Files** | Browse the server filesystem, open a text file, edit and save it (useful for `valheim_plus.cfg`-style configs). |
+| **Logs** | Nitrado's activity history, the server log files, and a reference of the in-game admin commands. |
+| **Files** | Browse the server filesystem, open a text file, edit and save it, with shortcuts to `savedata`, `worlds_local` and the three player list files. |
 
 ---
 
@@ -73,6 +73,8 @@ if you want a different mark.
 
 - **Node.js 20 or newer** (tested on Node 25).
 - A Nitrado server that is a **gameserver** service.
+- Optional, for the live map: the **`valheim_bepinex`** Nitrado addon. Everything
+  else works without it.
 
 ## Setup (2 minutes)
 
@@ -122,9 +124,9 @@ take priority over `.env`.
 - **Admin/ban lists use player IDs.** For Valheim these are Steam IDs (or
   platform IDs on crossplay). Some games don't support the whitelist endpoint, in
   which case that card just stays empty.
-- **World switching is read-only.** The Nitrado API exposes the current world and
-  the list of worlds, but has no endpoint to change it — so the panel shows them
-  without pretending otherwise.
+- **World switching is done through a setting.** Set **World name** to an existing
+  folder in `worlds_local` and restart. There is no separate endpoint for it, and
+  changing the setting does not create the world until the next start.
 - **Log paths come from Nitrado.** `game_specific.log_files` tells the panel which
   files to offer. If your server reports none, choose *Custom path…* and enter a
   path such as `/games/<username>/ftproot/valheim/valheim-server.log`.
@@ -178,10 +180,11 @@ These were verified against a real Nitrado Valheim service rather than assumed
 from documentation, and they are the things most guides get wrong.
 
 - **Valheim has no RCON.** Nitrado reports `has_application_server: false` for
-  Valheim, so there is no command channel. Admin commands (`save`, `kick`,
-  `ban`, `setworldmodifier`, `setworldpreset`, `resetworldkeys`) must be run
-  in-game from the F5 console by someone on the admin list. The Logs tab shows
-  the command reference instead of a box that would silently do nothing.
+  Valheim, so vanilla has no command channel at all. Admin commands (`save`,
+  `kick`, `ban`, `setworldmodifier`, `setworldpreset`, `resetworldkeys`) either
+  go through the F5 console in-game, or — with the ValheimOne plugin installed —
+  through its browser console on the live map. The Logs tab otherwise shows the
+  command reference rather than a box that would silently do nothing.
 - **Cheat commands do not work on dedicated servers**, admin or not — `spawn`,
   `god` and `fly` are refused by vanilla. Only a mod such as Server devcommands
   unlocks them.
@@ -219,18 +222,20 @@ BepInEx plugin running on your server. It re-draws from your world seed and
 updates in real time — player positions, and optionally ships, carts, portals
 and tombstones. It works with **vanilla clients**; players install nothing.
 
-The panel proxies it (`GET /api/livemap`) rather than calling it from the
-browser, because a cross-origin request would be blocked. The mod serves on its
-own TCP port (default **8790**) — not the game or query ports, which are UDP.
+The panel reaches it two ways, both server-side: `GET /api/livemap` for the
+status and player summary, and a **localhost proxy** that serves the map itself
+into the tab. Neither the browser nor the URL ever carries the token. The mod
+serves on its own TCP port (default **8790**) — not the game or query ports,
+which are UDP.
 
 **Player dots depend on in-game sharing.** ValheimOne respects each player's
 "visible to other players" map setting, so players who have switched it off do
 not appear.
 
-**The live map is publicly reachable** at `http://<server-ip>:8790` while the
-server runs — anyone who knows the address can view it. Player names are hidden
-from that public view by default. Set an `AccessToken` in `valheimone.cfg` to
-lock it down; the token view also unlocks the in-browser admin console.
+**The map is locked behind an access token.** Without it, the port returns
+`401 unauthorized` for the map page, every API and the console. See
+[Getting the live map working](#getting-the-live-map-working) below for how that
+is set up, and what it does and does not protect against.
 
 ### Offline map (seed only)
 
@@ -256,7 +261,11 @@ does **not** work; this was tested. Nitrado's own addon is the supported route:
    also changes gameplay).
 2. Start the server once. `BepInEx/LogOutput.log` appearing proves it loaded.
 3. `node tools/install-mod.mjs --plugin-only` uploads just the plugin.
-4. Restart, and the map is at `http://<server-ip>:8790`.
+4. `node tools/set-livemap-token.mjs` generates the access token, saves it
+   locally and writes it into the plugin's config. **Restart the server** for it
+   to take effect.
+5. The map is then at `http://127.0.0.1:8421` (the panel's local proxy), or in
+   the World map tab.
 
 `tools/install-mod.mjs` also takes `--list` to preview and `--remove` to undo
 exactly what it uploaded.
@@ -297,13 +306,22 @@ it is `vo save kick ban unban banned lodbias sleep` by default.
 
 ## Security
 
-- The panel binds to `127.0.0.1` by default, so only this PC can reach it.
-- The token is sent only to `api.nitrado.net` from the server side — the browser
-  never sees it.
-- `data/config.json` holds the token and is git-ignored.
+There are **two separate tokens**, and it is worth keeping them distinct:
 
-The token is **not encrypted at rest**. Anyone who can read `data/config.json`
-can read your token. See below for how to live with that.
+| Token | What it protects |
+| --- | --- |
+| **Nitrado API token** | Your whole Nitrado account, via the panel. |
+| **Live map token** | The ValheimOne map port on your game server. |
+
+Both are stored in `data/config.json`, which is git-ignored. The live map token
+is covered under [Getting the live map working](#getting-the-live-map-working);
+the rest of this section is about the Nitrado one.
+
+- The panel binds to `127.0.0.1` by default, so only this PC can reach it.
+- The Nitrado token is sent only to `api.nitrado.net`, from the server side — the
+  browser never sees it.
+- Neither token is **encrypted at rest**. Anyone who can read `data/config.json`
+  can read both. See below for how to live with that.
 
 ### Where the token is stored
 
@@ -365,9 +383,10 @@ Open <http://127.0.0.1:8420> — it will auto-pick the mock Valheim server.
 
 ```
 server/
-  index.js        Express app: /api routes, file read/write, settings batching
+  index.js        Express app: /api routes, file read/write, settings batching,
+                  plus the localhost proxy in front of the live map
   nitrado.js      Thin NitrAPI client (auth, retries, transfer URLs)
-  store.js        data/config.json persistence
+  store.js        data/config.json persistence (Nitrado token + live map token)
 public/
   index.html      Markup
   styles.css      Dark Valheim-ish theme
@@ -377,11 +396,30 @@ tools/
   launch.mjs      Starts the panel detached and opens the browser
   stop.mjs        Stops the panel via data/panel.pid
   make-icon.mjs   Generates assets/panel.ico
+  pull-world.mjs  Downloads a full local copy of savedata/ (world + list files)
+  install-mod.mjs Uploads a BepInEx mod release over FTP; --list, --plugin-only,
+                  --remove
+  set-livemap-token.mjs  Generates the live map token and writes the plugin config
+  delete-world.mjs       Deletes an inactive world, refusing if it is the active
+                         one or is not backed up
 assets/
   panel.ico       Desktop shortcut icon (generated)
+  icon-preview-256.png  Same icon as a PNG, for previewing
 test/
   mock-nitrado.mjs  Fake Nitrado API shaped like a real Valheim service
   discover.mjs      Read-only probe: dumps real API responses to data/discovery
+```
+
+Runtime files, all under the git-ignored `data/`:
+
+```
+data/config.json    Nitrado token, service id, live map token
+data/ftp.json       FTP credentials, written by the tooling above
+data/world-backup/  Local world copies from tools/pull-world.mjs
+data/panel.log      Running server output
+data/launch.log     Launcher output, shown in a dialog if startup fails
+data/panel.pid      Which process is the panel
+data/discovery/     Raw API responses from tools/discover.mjs
 ```
 
 ## Troubleshooting
@@ -425,3 +463,26 @@ minutes, save again, then start.
 
 **Can't read a log file** — confirm the path exists in the Files tab and that
 your token has the `ROLE_WEBINTERFACE_FILEBROWSER_READ` scope.
+
+### Live map
+
+**The map tab says the live map is unavailable.** The game server must be
+running with the plugin loaded. After a restart the map's own web server takes
+**30–90 seconds** to come up, because it regenerates the world texture first —
+the game can be `started` while the map is still warming up. Press Refresh.
+
+**Everything on the map port returns `401 unauthorized`.** That is the lockdown
+working. If the panel cannot see the map either, the saved token does not match
+the one in `valheimone.cfg` — run `node tools/set-livemap-token.mjs` again and
+restart the server.
+
+**The map loads but shows no players.** ValheimOne honours each player's
+"visible to other players" setting on the in-game map (press `M`). A player with
+that switched off will not appear, by design.
+
+**`LIVEMAP_PROXY_PORT` is already in use.** Something else has port 8421. Set a
+different one in `.env`, or start with `$env:LIVEMAP_PROXY_PORT="8422"`.
+
+**A world is still listed that you deleted.** Delete the world's folder with
+`node tools/delete-world.mjs <Name>`, then press Refresh in the Backups tab.
+Nitrado's API caches the world list for about a minute.
