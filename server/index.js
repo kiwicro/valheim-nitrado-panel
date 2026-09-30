@@ -2,8 +2,10 @@ import 'dotenv/config';
 import express from 'express';
 import fsSync from 'node:fs';
 import fs from 'node:fs/promises';
+import http from 'node:http';
 import path from 'node:path';
 import posix from 'node:path/posix';
+import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { createClient, NitradoError } from './nitrado.js';
 import { createStore } from './store.js';
@@ -210,6 +212,8 @@ app.get('/api/config', (req, res) => {
     apiBase: process.env.NITRADO_BASE_URL || 'https://api.nitrado.net',
     configPath: cfg.configPath,
     problem: cfg.problem,
+    hasLiveMapToken: Boolean(cfg.liveMapToken),
+    liveMapProxyUrl: `http://${process.env.HOST || '127.0.0.1'}:${Number(process.env.LIVEMAP_PROXY_PORT) || 8421}`,
   });
 });
 
@@ -218,6 +222,7 @@ app.post(
   wrap(async (req, res) => {
     const patch = {};
     if (typeof req.body?.token === 'string') patch.token = req.body.token.trim();
+    if (typeof req.body?.liveMapToken === 'string') patch.liveMapToken = req.body.liveMapToken.trim();
     if (req.body?.serviceId !== undefined) {
       patch.serviceId = req.body.serviceId === null || req.body.serviceId === '' ? null : String(req.body.serviceId);
     }
@@ -929,12 +934,25 @@ app.get(
  */
 
 const LIVEMAP_PORT = Number(process.env.LIVEMAP_PORT) || 8790;
+const LIVEMAP_PROXY_PORT = Number(process.env.LIVEMAP_PROXY_PORT) || 8421;
 
-async function fetchJsonWithTimeout(url, ms) {
+/** The game server's IP, cached — the proxy needs it on every request. */
+let ipCache = { at: 0, ip: null };
+async function serverIp() {
+  if (ipCache.ip && Date.now() - ipCache.at < 60000) return ipCache.ip;
+  const status = await fetchServerStatus(requireService());
+  const ip = status?.server?.ip;
+  if (!ip) throw new Error('Nitrado has not reported a server IP yet.');
+  ipCache = { at: Date.now(), ip };
+  return ip;
+}
+
+async function fetchJsonWithTimeout(url, ms, token) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ms);
   try {
-    const res = await fetch(url, { signal: controller.signal });
+    const headers = token ? { 'X-LiveMap-Token': token } : {};
+    const res = await fetch(url, { signal: controller.signal, headers });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } finally {
@@ -953,24 +971,29 @@ app.get(
     if (!ip) return res.json({ available: false, reason: 'Nitrado has not reported a server IP yet.' });
 
     const base = `http://${ip}:${port}`;
+    const token = store.resolve().liveMapToken;
+    const proxyUrl = `http://${HOST}:${LIVEMAP_PROXY_PORT}`;
     try {
-      const live = await fetchJsonWithTimeout(`${base}/api/status`, 5000);
+      const live = await fetchJsonWithTimeout(`${base}/api/status`, 5000, token);
       let players = null;
       try {
-        players = await fetchJsonWithTimeout(`${base}/api/players`, 5000);
+        players = await fetchJsonWithTimeout(`${base}/api/players`, 5000, token);
       } catch {
         /* player list is optional */
       }
-      res.json({ available: true, url: base, port, status: live, players: players?.players ?? null });
+      res.json({ available: true, url: base, proxyUrl, port, hasToken: Boolean(token), status: live, players: players?.players ?? null });
     } catch (err) {
       res.json({
         available: false,
         url: base,
+        proxyUrl,
         port,
+        hasToken: Boolean(token),
         reason:
           err.name === 'AbortError'
             ? `Nothing answered on ${base} within 5 seconds.`
-            : `Could not reach the live map at ${base} (${err.message}).`,
+            : `Could not reach the live map at ${base} (${err.message}).` +
+              (token ? '' : ' No map token is saved yet, which the map now requires.'),
       });
     }
   })
@@ -1022,6 +1045,74 @@ app.listen(PORT, HOST, async () => {
     console.log(`  !  ${cfg.problem}`);
   }
   console.log('');
+});
+
+/* ------------------------------------------------------------ live map proxy
+ * ValheimOne has no user accounts — a single shared token, on a port that is
+ * reachable from the internet. So the token stays here: this localhost-only
+ * proxy attaches the X-LiveMap-Token header, and the browser never sees it.
+ * It also streams, because the map uses Server-Sent Events for live updates.
+ */
+
+const livemapProxy = http.createServer(async (req, res) => {
+  const token = store.resolve().liveMapToken;
+
+  let ip;
+  try {
+    ip = await serverIp();
+  } catch (err) {
+    res.writeHead(502, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: err.message }));
+    return;
+  }
+
+  const headers = { ...req.headers };
+  delete headers.host;
+  delete headers.connection;
+  delete headers['content-length'];
+  // Let undici hand us the body untouched rather than decompressing it.
+  headers['accept-encoding'] = 'identity';
+  if (token) headers['x-livemap-token'] = token;
+
+  try {
+    const upstream = await fetch(`http://${ip}:${LIVEMAP_PORT}${req.url}`, {
+      method: req.method,
+      headers,
+      body: ['GET', 'HEAD'].includes(req.method) ? undefined : req,
+      duplex: 'half',
+      redirect: 'manual',
+    });
+
+    const outHeaders = {};
+    for (const [key, value] of upstream.headers) {
+      if (['content-encoding', 'content-length', 'transfer-encoding', 'connection'].includes(key)) continue;
+      outHeaders[key] = value;
+    }
+    res.writeHead(upstream.status, outHeaders);
+
+    if (!upstream.body) {
+      res.end();
+      return;
+    }
+    const stream = Readable.fromWeb(upstream.body);
+    stream.pipe(res);
+    res.on('close', () => stream.destroy());
+  } catch (err) {
+    if (!res.headersSent) {
+      res.writeHead(502, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: `Live map unreachable: ${err.message}` }));
+    } else {
+      res.end();
+    }
+  }
+});
+
+livemapProxy.on('error', (err) => {
+  console.error(`  live map proxy could not start on ${HOST}:${LIVEMAP_PROXY_PORT} — ${err.message}`);
+});
+
+livemapProxy.listen(LIVEMAP_PROXY_PORT, HOST, () => {
+  console.log(`  live map proxy: http://${HOST}:${LIVEMAP_PROXY_PORT}  ->  server :${LIVEMAP_PORT}`);
 });
 
 async function removePidFile() {

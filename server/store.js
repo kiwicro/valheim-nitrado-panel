@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-const EMPTY = { token: '', serviceId: null };
+const EMPTY = { token: '', serviceId: null, liveMapToken: '' };
 
 /**
  * Tiny JSON file store for the settings the user enters in the panel (API token
@@ -42,6 +42,7 @@ export function createStore(file) {
       state = {
         token: typeof parsed.token === 'string' ? parsed.token : '',
         serviceId: parsed.serviceId ?? null,
+        liveMapToken: typeof parsed.liveMapToken === 'string' ? parsed.liveMapToken : '',
       };
     } catch (err) {
       // Keep the broken file rather than quietly losing it.
@@ -79,7 +80,8 @@ export function createStore(file) {
 
     // Make sure it really landed on disk before reporting success.
     const written = await fs.readFile(file, 'utf8');
-    if (JSON.parse(written.replace(/^\uFEFF/, '')).token !== state.token) {
+    const check = JSON.parse(written.replace(/^\uFEFF/, ''));
+    if (check.token !== state.token || check.liveMapToken !== state.liveMapToken) {
       throw new Error(`Could not confirm the settings were written to ${file}`);
     }
 
@@ -99,6 +101,7 @@ export function createStore(file) {
     return {
       token,
       serviceId: serviceId ? String(serviceId) : null,
+      liveMapToken: state.liveMapToken || '',
       tokenSource: state.token ? 'panel' : envToken ? 'env' : 'none',
       serviceSource: state.serviceId ? 'panel' : envService ? 'env' : 'none',
       loaded,

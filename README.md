@@ -264,6 +264,37 @@ exactly what it uploaded.
 ValheimOne leaves **every gameplay feature disabled by default** — only
 `[Server]` and the map are on — so the world stays vanilla.
 
+**The map is locked behind a token.** ValheimOne has no user accounts — only
+shared secrets — and its port is reachable from the internet, so the token is
+the whole security model:
+
+| Request | Without token |
+|---|---|
+| The map page | `401 unauthorized` |
+| `/api/status`, `/api/players` | `401 unauthorized` |
+| `/api/console/exec` (kick/ban/save) | `401 unauthorized` |
+
+`tools/set-livemap-token.mjs` generates a 32-character token, saves it to
+`data/config.json`, and writes it into `valheimone.cfg` along with
+`PublicView = false` so nothing on that port works without it.
+
+**The token never reaches your browser.** ValheimOne's map uses absolute asset
+paths and Server-Sent Events, so the panel runs a small localhost-only proxy on
+port **8421** that forwards to the map and attaches the token as an
+`X-LiveMap-Token` header. The map tab points at the proxy, which is why the
+token stays out of your browser history, screenshots and referrer headers.
+(`LIVEMAP_PROXY_PORT` overrides 8421, `LIVEMAP_PORT` overrides 8790.)
+
+**What this does not give you.** There is no per-person identity: one token
+grants admin to whoever holds it, there is no audit trail of who ran what, and
+rotating the token is the only revocation. Real per-user login tied to
+`adminlist.txt` would need a mod feature that does not exist. Adding a login
+page in front of a proxy would be pointless, because anyone who knows the
+server IP can bypass the proxy and talk to the mod directly.
+
+Narrow `ConsoleWhitelist` in `valheimone.cfg` if you want a smaller command set —
+it is `vo save kick ban unban banned lodbias sleep` by default.
+
 ## Security
 
 - The panel binds to `127.0.0.1` by default, so only this PC can reach it.

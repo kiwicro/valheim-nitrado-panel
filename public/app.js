@@ -1730,8 +1730,9 @@ function renderLiveMap() {
 
   const live = data.status || {};
   statusBox.className = 'alert hidden';
-  $('#livemap-sub').textContent = `${data.url} · plugin ${live.pluginVersion || '?'} · ${live.view || 'public'} view`;
-  $('#livemap-open').href = `${data.url}/`;
+  const viewUrl = data.hasToken && data.proxyUrl ? data.proxyUrl : data.url;
+  $('#livemap-sub').textContent = `${viewUrl} · plugin ${live.pluginVersion || '?'} · ${live.view || 'public'} view${data.hasToken ? ' · via local proxy' : ''}`;
+  $('#livemap-open').href = `${viewUrl}/`;
   $('#livemap-open').classList.remove('hidden');
 
   const rows = [
@@ -1752,9 +1753,9 @@ function renderLiveMap() {
     );
   }
 
-  if (frame.dataset.url !== data.url) {
-    frame.dataset.url = data.url;
-    frame.src = `${data.url}/`;
+  if (frame.dataset.url !== viewUrl) {
+    frame.dataset.url = viewUrl;
+    frame.src = `${viewUrl}/`;
     frame.classList.remove('hidden');
     placeholder.textContent = '';
     placeholder.classList.remove('hidden');
