@@ -96,6 +96,7 @@ const state = {
   dirty: new Map(),
   players: null,
   playersRaw: null,
+  worldMeta: null,
   logSources: [],
   hasConsole: false,
   hasContainerConsole: false,
@@ -1533,6 +1534,171 @@ function renderNotifications() {
     });
 }
 
+/* --------------------------------------------------------------- world map */
+
+let mapLoadTimer = null;
+
+const APPLIED_DIAL_LABELS = {
+  combat: 'Combat',
+  deathpenalty: 'Death penalty',
+  resources: 'Resources',
+  raids: 'Raids',
+  portals: 'Portals',
+};
+
+const APPLIED_KEY_LABELS = {
+  nobuildcost: 'Free building',
+  nocraftcost: 'Free crafting',
+  noworkbench: 'No workbench needed',
+  allpiecesunlocked: 'All pieces unlocked',
+  allrecipesunlocked: 'All recipes unlocked',
+  dungeonbuild: 'Build in dungeons',
+  nobossportals: 'No boss portals',
+  teleportall: 'Teleport everything',
+  nomap: 'No map',
+  noportals: 'No portals',
+  passivemobs: 'Passive creatures',
+  playerevents: 'Player-triggered raids',
+  fire: 'Fire spreads everywhere',
+};
+
+async function refreshWorldMeta() {
+  const placeholder = $('#map-placeholder');
+  try {
+    state.worldMeta = await api('/api/world/meta');
+    renderWorldMeta();
+  } catch (err) {
+    $('#map-sub').textContent = 'Could not read the world file.';
+    placeholder.textContent = '';
+    placeholder.classList.remove('hidden');
+    placeholder.append(el('div', { class: 'empty' }, err.message));
+    toast(err.message, 'error');
+  }
+}
+
+function renderWorldMeta() {
+  const data = state.worldMeta;
+  if (!data) return;
+
+  const placeholder = $('#map-placeholder');
+  const status = $('#map-status');
+  const seed = data.seed;
+
+  $('#map-title').textContent = `World: ${data.worldName || '—'}`;
+  $('#map-file').textContent = data.file?.name || '—';
+
+  // Changing the World name setting does not create the folder until the next
+  // start, so the configured world can be missing while another exists.
+  const warnings = [];
+  if (data.mismatch) {
+    warnings.push(
+      `Your Server settings say the world is "${data.configuredWorld}", but no folder with that name exists yet — ` +
+        `the map below is showing "${data.worldName}", which is what is actually on disk. ` +
+        'A new world is only created when the server next starts, and the settings change will not take effect until then.'
+    );
+  }
+  if (data.available?.length > 1) {
+    warnings.push(`Worlds on disk: ${data.available.join(', ')}.`);
+  }
+
+  if (!seed) {
+    $('#map-sub').textContent = '';
+    status.className = `alert ${warnings.length ? 'warn' : 'error'}`;
+    status.textContent = [data.error, ...warnings].filter(Boolean).join(' ');
+    placeholder.textContent = '';
+    placeholder.classList.remove('hidden');
+    placeholder.append(el('div', { class: 'empty' }, 'No seed available, so a map cannot be generated.'));
+    $('#map-applied').textContent = '';
+    $('#map-applied').append(el('div', { class: 'empty' }, 'Not available without the world file.'));
+    return;
+  }
+
+  status.className = warnings.length ? 'alert warn' : 'alert hidden';
+  status.textContent = warnings.join(' ');
+  $('#map-sub').textContent = `seed ${seed} · ${data.file?.name || ''} · ${fmtBytes(data.file?.size)}`;
+  $('#map-copy-seed').disabled = false;
+  $('#map-copy-seed').onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(seed);
+      toast('Seed copied.', 'ok', 1800);
+    } catch {
+      toast(seed, 'info', 8000);
+    }
+  };
+
+  const url = `https://valheim-map.world/?seed=${encodeURIComponent(seed)}&offset=0,0&zoom=0.600`;
+  $('#map-open').href = url;
+  $('#map-open').classList.remove('hidden');
+
+  // Only load the (heavy) third-party generator once per seed.
+  const frame = $('#map-frame');
+  if (frame.dataset.seed !== seed) {
+    frame.dataset.seed = seed;
+    frame.classList.add('hidden');
+    placeholder.classList.remove('hidden');
+    placeholder.textContent = '';
+    placeholder.append(
+      el('div', { class: 'loading' }, 'Generating the world map — this runs a full world generator in your browser and can take a little while.')
+    );
+    frame.src = url;
+    frame.classList.remove('hidden');
+
+    // Some browsers block third-party frames. Tell the user rather than
+    // leaving them staring at a spinner.
+    clearTimeout(mapLoadTimer);
+    mapLoadTimer = setTimeout(() => {
+      const placeholderEl = $('#map-placeholder');
+      if (placeholderEl.classList.contains('hidden')) return;
+      placeholderEl.textContent = '';
+      placeholderEl.append(
+        el('div', { class: 'empty' },
+          'Still loading after 20 seconds. Some browsers block embedded third-party pages — use "Open in new tab" above if this does not resolve.'
+        )
+      );
+    }, 20000);
+  }
+
+  renderAppliedModifiers(data);
+}
+
+function renderAppliedModifiers(data) {
+  const box = $('#map-applied');
+  box.textContent = '';
+
+  if (!data.applied) {
+    box.append(el('div', { class: 'empty' }, 'Could not read the modifiers out of the world file.'));
+    return;
+  }
+
+  const chips = [];
+  for (const [dial, value] of Object.entries(data.applied.dials || {})) {
+    chips.push({
+      label: APPLIED_DIAL_LABELS[dial] || humanize(dial),
+      value: value === 'default' ? 'from preset' : value,
+      muted: value === 'default',
+    });
+  }
+  for (const key of data.applied.keys || []) {
+    chips.push({ label: APPLIED_KEY_LABELS[key] || humanize(key), value: 'on', muted: false });
+  }
+
+  if (!chips.length) {
+    box.append(el('div', { class: 'empty' }, 'Nothing recorded — this world is on pure defaults.'));
+    return;
+  }
+
+  for (const chip of chips) {
+    box.append(
+      el(
+        'div',
+        { class: 'applied-chip' },
+        el('span', { class: 'field-name' }, chip.label),
+        el('span', { class: `value mono${chip.muted ? ' muted' : ''}` }, chip.value)
+      )
+    );
+  }
+}
+
 /* ---------------------------------------------------------------- backups */
 
 async function refreshBackups({ silent = false } = {}) {
@@ -1970,6 +2136,7 @@ const TAB_META = {
   dashboard: ['Dashboard', 'Control and monitor your Valheim server'],
   settings: ['Server settings', 'Edit the settings Nitrado applies to your server'],
   players: ['Players & admins', 'See who is online and manage admin, ban and whitelist entries'],
+  map: ['World map', 'Your whole world, generated from its seed'],
   backups: ['Backups & schedule', 'World backups, world files and scheduled restarts'],
   logs: ['Logs', 'Server and Nitrado activity history'],
   files: ['Files', 'Browse and edit files on the server'],
@@ -1997,6 +2164,12 @@ async function onTabEnter(tab) {
   if (tab === 'players') {
     await refreshPlayers({ silent: true });
     if (!state.playersRaw) await refreshPlayersRaw({ silent: true });
+  }
+  if (tab === 'map') {
+    if (!state.loadedTabs.has('map')) {
+      state.loadedTabs.add('map');
+      await refreshWorldMeta();
+    }
   }
   if (tab === 'backups') {
     if (!state.loadedTabs.has('backups')) {
@@ -2119,6 +2292,16 @@ function wireEvents() {
   $('#activity-next').addEventListener('click', () => refreshActivity(state.activity.page + 1));
   // The console box is built by renderConsolePanel() and wires its own handlers,
   // because for Valheim there is no command channel at all.
+
+  // map
+  const mapFrame = $('#map-frame');
+  mapFrame.addEventListener('load', () => {
+    if (mapFrame.src && !mapFrame.src.startsWith('about:')) $('#map-placeholder').classList.add('hidden');
+  });
+  $('#map-open').addEventListener('click', () => {
+    // The link is the reliable path if a browser refuses to frame the site.
+    toast('Opening the map in a new tab.', 'info', 2500);
+  });
 
   // files
   $('#files-refresh').addEventListener('click', () => refreshFiles());

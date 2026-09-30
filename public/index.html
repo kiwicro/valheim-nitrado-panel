@@ -32,6 +32,7 @@
       <symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 2 1 21h22L12 2Zm1 15h-2v2h2v-2Zm0-7h-2v5h2v-5Z"/></symbol>
       <symbol id="i-send" viewBox="0 0 24 24"><path d="M2 21 23 12 2 3v7l15 2-15 2v7Z"/></symbol>
       <symbol id="i-archive" viewBox="0 0 24 24"><path d="M3 5h18v3H3zM5 9h14v10H5zM10 12h4v2h-4z"/></symbol>
+      <symbol id="i-map" viewBox="0 0 24 24"><path d="m9 2 6 2 6-2v18l-6 2-6-2-6 2V4l6-2Zm0 2.4L4 6v13l5-1.6V4.4Zm2 0v13l4 1.3V5.7l-4-1.3Z"/></symbol>
       <symbol id="i-clock" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2Zm1 10.6 4 2.4-1 1.7-5-3V6h2Z"/></symbol>
     </svg>
 
@@ -99,6 +100,7 @@
           <button class="nav-item active" data-tab="dashboard"><svg class="ico"><use href="#i-dash"/></svg> Dashboard</button>
           <button class="nav-item" data-tab="settings"><svg class="ico"><use href="#i-sliders"/></svg> Server settings</button>
           <button class="nav-item" data-tab="players"><svg class="ico"><use href="#i-users"/></svg> Players &amp; admins</button>
+          <button class="nav-item" data-tab="map"><svg class="ico"><use href="#i-map"/></svg> World map</button>
           <button class="nav-item" data-tab="backups"><svg class="ico"><use href="#i-archive"/></svg> Backups &amp; schedule</button>
           <button class="nav-item" data-tab="logs"><svg class="ico"><use href="#i-logs"/></svg> Logs</button>
           <button class="nav-item" data-tab="files"><svg class="ico"><use href="#i-folder"/></svg> Files</button>
@@ -286,6 +288,68 @@
               Restart the server after editing.
             </p>
             <div id="raw-lists" class="raw-lists"></div>
+          </div>
+        </section>
+
+        <!-- World map -->
+        <section class="tab-panel" data-panel="map">
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <h2 id="map-title">World map</h2>
+                <p class="muted small" id="map-sub">Reading the world file…</p>
+              </div>
+              <div class="row-actions">
+                <button id="map-copy-seed" class="btn btn-ghost btn-sm" disabled><svg class="ico"><use href="#i-copy"/></svg> Copy seed</button>
+                <a id="map-open" class="btn btn-primary btn-sm hidden" href="#" target="_blank" rel="noopener">Open in new tab <svg class="ico"><use href="#i-external"/></svg></a>
+              </div>
+            </div>
+            <div id="map-status" class="alert hidden"></div>
+            <div class="map-wrap">
+              <iframe id="map-frame" class="map-frame hidden" title="Valheim world map" loading="lazy" referrerpolicy="no-referrer"></iframe>
+              <div id="map-placeholder" class="map-placeholder"><div class="loading">Loading the world map…</div></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <h2>What this map can and cannot show</h2>
+              <span class="muted small">read this before you trust it</span>
+            </div>
+            <ul class="plain-list">
+              <li class="ok">
+                <strong>Can:</strong> the whole world's terrain, biomes and points of interest — bosses, dungeons,
+                villages — generated from your world seed. That is more than the in-game map shows, because it is not
+                limited to what you have explored.
+              </li>
+              <li class="no">
+                <strong>Cannot:</strong> live player positions. Vanilla Valheim and the Nitrado API expose no player
+                coordinates, and Valheim has no RCON — the only way to get them is a server-side mod, which this
+                service does not have installed.
+              </li>
+              <li class="no">
+                <strong>Cannot:</strong> your fog of war or your own map pins. Those live in the world's
+                <span class="mono">.db2</span> file, which this panel does not parse. Upload that file on the map site
+                if you want your explored map and markers.
+              </li>
+              <li class="warn">
+                <strong>Privacy:</strong> the map is drawn by the third-party site
+                <span class="mono">valheim-map.world</span>, so your world seed is sent to it when the map loads.
+                Nothing else about your server is shared.
+              </li>
+            </ul>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <h2>Modifiers recorded in the world file</h2>
+              <span class="muted small" id="map-file">—</span>
+            </div>
+            <p class="muted small">
+              What the world has actually baked in, read straight out of the world file. If this disagrees with the
+              Server settings tab, the server has not been restarted since those settings were saved.
+            </p>
+            <div id="map-applied" class="settings-fields toggles"><div class="loading">Reading…</div></div>
           </div>
         </section>
 

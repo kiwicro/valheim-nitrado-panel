@@ -19,6 +19,7 @@ when the panel calls Nitrado directly.
 | **Server settings** | Edits the settings Nitrado exposes for your server (server name, password, world, public, crossplay, save interval, world modifiers…). Renders whatever your service actually returns, grouped by category. |
 | **Players & admins** | Who is online right now, add/remove **admin**, **ban** and **whitelist** entries, and see the raw list files Valheim actually reads. |
 | **Backups & schedule** | Worlds found in `worlds_local/`, Nitrado's world backups (with restore), and the cron-style scheduled tasks that handle daily restarts. |
+| **World map** | Your whole world's terrain and points of interest, generated from the world seed. Read the honesty box on that tab — it is *not* a live map. |
 | **Logs** | Nitrado's activity history plus the server log files (for Valheim, `restart.log`). |
 | **Files** | Browse the server filesystem, open a text file, edit and save it (useful for `valheim_plus.cfg`-style configs). |
 
@@ -206,6 +207,39 @@ from documentation, and they are the things most guides get wrong.
 - **Backups can be listed and restored, but not created** through the API.
   Nitrado takes them on its own schedule; use the web interface for an
   on-demand one.
+
+## The world map
+
+The **World map** tab reads your world's metadata file (`_main.N.fwl2` — 158 bytes)
+to pull out the world seed, then hands that seed to
+[valheim-map.world](https://valheim-map.world), embedded in the page.
+
+The layout of that file was verified against a real world: a length-prefixed world
+name, then a length-prefixed seed. Both parse as readable strings, which is a good
+check on the offset.
+
+### What it is, and is not
+
+- **It is not live.** Vanilla Valheim and the Nitrado API expose no player
+  coordinates, and Valheim has no RCON. Player dots would need a server-side mod.
+- **It does not need your explored data.** The map is generated from the seed
+  algorithmically, so it covers the entire world — including biomes you have never
+  visited. A barely-played world maps just as completely as an old one.
+- **It cannot show your fog of war or your pins.** Those live in the `.db2` file,
+  which this panel does not parse. Upload that file on the map site if you want them.
+- **Your seed is sent to a third party** when the map loads. Nothing else about
+  your server is.
+
+The tab also shows the world modifiers **recorded inside the world file**, which is
+what the world actually has — as opposed to what the Server settings tab says. If
+the two disagree, the server has not been restarted since the settings were saved.
+
+### If the configured world is missing
+
+Changing the **World name** setting does not create the world until the server next
+starts. Until then, the settings name a world that does not exist. The map tab
+detects this, falls back to the world that is actually on disk, and tells you which
+one it is showing.
 
 ## Security
 

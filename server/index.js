@@ -784,6 +784,144 @@ app.get(
   })
 );
 
+/* -------------------------------------------------------------- world meta
+ * Reads the world's metadata file (_main.N.fwl2) to get the world name, the
+ * seed and the modifiers actually baked into the world.
+ *
+ * Layout verified against a real Valheim 1.0 world:
+ *   uint32  version / length
+ *   uint32  world version id
+ *   uint8   nameLength + name bytes
+ *   uint8   seedLength + seed bytes   (a short printable string, e.g. "HiCpmZJGDt")
+ */
+
+let worldMetaCache = null;
+
+function parseFwl2(buf) {
+  if (buf.length < 12) return null;
+
+  const nameLength = buf.readUInt8(8);
+  if (nameLength < 1 || nameLength > 64 || 9 + nameLength >= buf.length) return null;
+  const name = buf.subarray(9, 9 + nameLength).toString('utf8');
+  if (!/^[\x20-\x7e]+$/.test(name)) return null;
+
+  const seedOffset = 9 + nameLength;
+  const seedLength = buf.readUInt8(seedOffset);
+  if (seedLength < 1 || seedLength > 64 || seedOffset + 1 + seedLength > buf.length) return null;
+  const seed = buf.subarray(seedOffset + 1, seedOffset + 1 + seedLength).toString('utf8');
+  if (!/^[\x20-\x7e]+$/.test(seed)) return null;
+
+  // The tail carries the applied world modifiers as a readable run such as
+  // "preset combat_default:deathpenalty_default:...:portals_default".
+  const text = buf.toString('utf8');
+  const dials = {};
+  const keys = [];
+  const presetRun = text.match(/preset [\x20-\x7e]+/);
+  if (presetRun) {
+    for (const token of presetRun[0].slice('preset '.length).split(':')) {
+      const match = token.match(/^(combat|deathpenalty|resources|raids|portals)_([a-z]+)$/);
+      if (match) dials[match[1]] = match[2];
+    }
+  }
+  for (const token of text.match(/[\x20-\x7e]+/g) || []) {
+    const trimmed = token.trim();
+    if (/^(nobuildcost|nocraftcost|noworkbench|allpiecesunlocked|allrecipesunlocked|dungeonbuild|nobossportals|teleportall|nomap|noportals|passivemobs|playerevents|fire)$/.test(trimmed)) {
+      keys.push(trimmed);
+    }
+  }
+
+  return { name, seed, dials, keys };
+}
+
+app.get(
+  '/api/world/meta',
+  wrap(async (req, res) => {
+    const id = requireService();
+    const status = await fetchServerStatus(id);
+    const savedata = status?.server?.savedataPath;
+    const configuredWorld = status?.valheim?.currentWorld || null;
+
+    if (!savedata || !configuredWorld) {
+      return res.json({ configuredWorld, seed: null, error: 'Could not work out the world folder.' });
+    }
+
+    const worldsDir = posix.join(savedata, 'worlds_local');
+    const listing = await client
+      .get(`/services/${id}/gameservers/file_server/list`, { query: { dir: worldsDir } })
+      .catch(tolerate([404, 500]));
+
+    const available = (listing?.data?.entries || [])
+      .filter((e) => e.type === 'dir')
+      .map((e) => e.name);
+
+    // The configured world may not exist yet: changing the World name setting
+    // does not create the folder until the server next starts. Fall back to the
+    // world that is actually on disk, and say so loudly.
+    let worldName = configuredWorld;
+    let mismatch = false;
+    if (!available.includes(configuredWorld)) {
+      if (!available.length) {
+        return res.json({
+          configuredWorld,
+          worldName,
+          available,
+          seed: null,
+          error: `The settings say the world is "${configuredWorld}", but savedata/worlds_local is empty. Start the server once to create it.`,
+        });
+      }
+      worldName = available[0];
+      mismatch = true;
+    }
+
+    const folder = posix.join(worldsDir, worldName);
+    const list = await client
+      .get(`/services/${id}/gameservers/file_server/list`, { query: { dir: folder } })
+      .catch(tolerate([404, 500]));
+
+    const entries = list?.data?.entries || [];
+    const metaFile =
+      entries.find((e) => /^_main\.\d+\.fwl2$/i.test(e.name)) || entries.find((e) => /\.fwl2?$/i.test(e.name));
+    if (!metaFile) {
+      return res.json({
+        configuredWorld,
+        worldName,
+        available,
+        mismatch,
+        savedata,
+        seed: null,
+        error: `No world metadata file found in ${worldName}.`,
+      });
+    }
+
+    const cacheKey = `${metaFile.path}:${metaFile.modified_at ?? 0}`;
+    if (worldMetaCache?.key === cacheKey && Date.now() - worldMetaCache.at < 120000) {
+      return res.json(worldMetaCache.value);
+    }
+
+    const link = await client.get(`/services/${id}/gameservers/file_server/download`, { query: { file: metaFile.path } });
+    const url = link?.data?.token?.url;
+    if (!url) return res.json({ configuredWorld, worldName, available, mismatch, seed: null, error: 'No download link for the world metadata.' });
+
+    const buf = Buffer.from(await (await client.transfer(url)).arrayBuffer());
+    const parsed = parseFwl2(buf);
+
+    const value = {
+      worldName: parsed?.name || worldName,
+      configuredWorld,
+      available,
+      mismatch,
+      savedata,
+      file: { name: metaFile.name, path: metaFile.path, size: buf.length, modifiedAt: metaFile.modified_at ?? null },
+      seed: parsed?.seed || null,
+      applied: parsed ? { dials: parsed.dials, keys: parsed.keys } : null,
+      error: parsed ? null : 'The world metadata file could not be read.',
+    };
+
+    worldMetaCache = { key: cacheKey, at: Date.now(), value };
+    res.json(value);
+  })
+);
+
 /* ---------------------------------------------------------------- error sink */
 
 app.use('/api', (req, res) => {
