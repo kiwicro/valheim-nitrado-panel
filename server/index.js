@@ -223,6 +223,7 @@ app.post(
     const patch = {};
     if (typeof req.body?.token === 'string') patch.token = req.body.token.trim();
     if (typeof req.body?.liveMapToken === 'string') patch.liveMapToken = req.body.liveMapToken.trim();
+    if (typeof req.body?.liveMapAdminFog === 'boolean') patch.liveMapAdminFog = req.body.liveMapAdminFog;
     if (req.body?.serviceId !== undefined) {
       patch.serviceId = req.body.serviceId === null || req.body.serviceId === '' ? null : String(req.body.serviceId);
     }
@@ -981,7 +982,16 @@ app.get(
       } catch {
         /* player list is optional */
       }
-      res.json({ available: true, url: base, proxyUrl, port, hasToken: Boolean(token), status: live, players: players?.players ?? null });
+      res.json({
+        available: true,
+        url: base,
+        proxyUrl,
+        port,
+        hasToken: Boolean(token),
+        adminFog: store.resolve().liveMapAdminFog,
+        status: live,
+        players: players?.players ?? null,
+      });
     } catch (err) {
       res.json({
         available: false,
@@ -1088,6 +1098,25 @@ const livemapProxy = http.createServer(async (req, res) => {
       if (['content-encoding', 'content-length', 'transfer-encoding', 'connection'].includes(key)) continue;
       outHeaders[key] = value;
     }
+
+    // The map's admin view keeps its own "Fog preview" layer setting in
+    // localStorage, defaulting to off — so an admin sees the whole world even
+    // when fog is configured server-side. Seed that setting before the app
+    // boots, so the panel's view matches the server's fog mode.
+    const contentType = upstream.headers.get('content-type') || '';
+    if (contentType.includes('text/html') && upstream.body) {
+      let html = await upstream.text();
+      const desired = store.resolve().liveMapAdminFog ? 'true' : 'false';
+      const bootstrap =
+        `<script>(function(){try{var k="vo-livemap-layers-v2";var s={};` +
+        `try{s=JSON.parse(localStorage.getItem(k)||"{}")||{};}catch(e){}` +
+        `s.adminFog=${desired};localStorage.setItem(k,JSON.stringify(s));}catch(e){}})();</script>`;
+      html = /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, (m) => m + bootstrap) : bootstrap + html;
+      res.writeHead(upstream.status, outHeaders);
+      res.end(html);
+      return;
+    }
+
     res.writeHead(upstream.status, outHeaders);
 
     if (!upstream.body) {

@@ -1738,6 +1738,9 @@ function renderLiveMap() {
   const fog = live.map?.fog;
   const fogLabel = !fog || fog.mode === 'off' ? 'off (whole world)' : `${fog.mode}${fog.hide ? ' · hidden' : ' · tinted'}`;
 
+  const fogToggle = $('#livemap-fog');
+  if (fogToggle) fogToggle.checked = data.adminFog !== false;
+
   const rows = [
     ['Players', `${live.players ?? 0} / ${live.maxPlayers ?? '?'}`],
     ['In-game day', live.day ?? '—'],
@@ -2410,6 +2413,18 @@ function wireEvents() {
   });
   $('#map-load').addEventListener('click', loadSeedMap);
   $('#livemap-refresh').addEventListener('click', refreshLiveMap);
+  $('#livemap-fog').addEventListener('change', async (event) => {
+    try {
+      await api('/api/config', { method: 'POST', body: { liveMapAdminFog: event.target.checked } });
+      // Reload the frame so the injected setting takes effect.
+      const frame = $('#livemap-frame');
+      frame.dataset.url = '';
+      await refreshLiveMap();
+      toast(event.target.checked ? 'Fog of war on.' : 'Fog of war off — showing the whole world.', 'ok');
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+  });
 
   // files
   $('#files-refresh').addEventListener('click', () => refreshFiles());

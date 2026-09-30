@@ -258,8 +258,32 @@ tab's stat chips (`Fog of war: explored · hidden`).
 at startup. The live state is also served at `/api/status` under `map.fog`, so
 the panel reports it rather than guessing.
 
-Because `locked` is `false` for the admin view, you can still switch fog off from
-the map's own controls for a quick look, without changing the server setting.
+### Why the admin view ignored the setting
+
+Setting `FogMode` alone was **not enough**, and the reason is a genuine trap:
+
+ValheimOne has *two* fog layers. The public view gets `fog`, which **defaults to
+on**. The admin view gets a separate `adminFog` — labelled **"Fog preview"** in
+the map's Layers panel — which **defaults to off**, and is stored in the
+browser's `localStorage` rather than on the server.
+
+The panel connects as **admin** (it holds the access token), so it got the
+unfogged view and made the server-side setting look broken. The clue is in the
+map's own defaults:
+
+```js
+var LAYER_DEFAULTS = { ..., fog: true, adminFog: false, ... };
+```
+
+**The panel fixes this for you.** Its proxy injects a two-line script into the
+map page that seeds `adminFog` before the app boots, so the map matches the
+server's fog mode without you touching the map's controls. You can flip it from
+the **Fog of war** checkbox on the World map tab; the setting lives in
+`data/config.json` as `liveMapAdminFog` and defaults to on.
+
+You can also tick "Fog preview" yourself in the map's Layers panel — but it is
+per-browser, so it resets if you clear site data, and the panel's injection is
+what makes it reliable.
 
 **A fresh world will look nearly empty.** Fog shows what has been explored, so
 until players have actually covered ground the map is almost entirely blank —

@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-const EMPTY = { token: '', serviceId: null, liveMapToken: '' };
+const EMPTY = { token: '', serviceId: null, liveMapToken: '', liveMapAdminFog: true };
 
 /**
  * Tiny JSON file store for the settings the user enters in the panel (API token
@@ -43,6 +43,7 @@ export function createStore(file) {
         token: typeof parsed.token === 'string' ? parsed.token : '',
         serviceId: parsed.serviceId ?? null,
         liveMapToken: typeof parsed.liveMapToken === 'string' ? parsed.liveMapToken : '',
+        liveMapAdminFog: typeof parsed.liveMapAdminFog === 'boolean' ? parsed.liveMapAdminFog : true,
       };
     } catch (err) {
       // Keep the broken file rather than quietly losing it.
@@ -84,7 +85,6 @@ export function createStore(file) {
     if (check.token !== state.token || check.liveMapToken !== state.liveMapToken) {
       throw new Error(`Could not confirm the settings were written to ${file}`);
     }
-
     problem = null;
     return state;
   }
@@ -102,6 +102,7 @@ export function createStore(file) {
       token,
       serviceId: serviceId ? String(serviceId) : null,
       liveMapToken: state.liveMapToken || '',
+      liveMapAdminFog: state.liveMapAdminFog !== false,
       tokenSource: state.token ? 'panel' : envToken ? 'env' : 'none',
       serviceSource: state.serviceId ? 'panel' : envService ? 'env' : 'none',
       loaded,
