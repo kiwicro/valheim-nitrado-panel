@@ -210,36 +210,59 @@ from documentation, and they are the things most guides get wrong.
 
 ## The world map
 
-The **World map** tab reads your world's metadata file (`_main.N.fwl2` — 158 bytes)
-to pull out the world seed, then hands that seed to
-[valheim-map.world](https://valheim-map.world), embedded in the page.
+The **World map** tab has two maps with different jobs.
 
-The layout of that file was verified against a real world: a length-prefixed world
-name, then a length-prefixed seed. Both parse as readable strings, which is a good
-check on the offset.
+### Live map (ValheimOne, server-side)
 
-### What it is, and is not
+The primary map is served by the **[ValheimOne](https://github.com/humangenome/ValheimOne)**
+BepInEx plugin running on your server. It re-draws from your world seed and
+updates in real time — player positions, and optionally ships, carts, portals
+and tombstones. It works with **vanilla clients**; players install nothing.
 
-- **It is not live.** Vanilla Valheim and the Nitrado API expose no player
-  coordinates, and Valheim has no RCON. Player dots would need a server-side mod.
-- **It does not need your explored data.** The map is generated from the seed
-  algorithmically, so it covers the entire world — including biomes you have never
-  visited. A barely-played world maps just as completely as an old one.
-- **It cannot show your fog of war or your pins.** Those live in the `.db2` file,
-  which this panel does not parse. Upload that file on the map site if you want them.
-- **Your seed is sent to a third party** when the map loads. Nothing else about
-  your server is.
+The panel proxies it (`GET /api/livemap`) rather than calling it from the
+browser, because a cross-origin request would be blocked. The mod serves on its
+own TCP port (default **8790**) — not the game or query ports, which are UDP.
 
-The tab also shows the world modifiers **recorded inside the world file**, which is
-what the world actually has — as opposed to what the Server settings tab says. If
-the two disagree, the server has not been restarted since the settings were saved.
+**Player dots depend on in-game sharing.** ValheimOne respects each player's
+"visible to other players" map setting, so players who have switched it off do
+not appear.
 
-### If the configured world is missing
+**The live map is publicly reachable** at `http://<server-ip>:8790` while the
+server runs — anyone who knows the address can view it. Player names are hidden
+from that public view by default. Set an `AccessToken` in `valheimone.cfg` to
+lock it down; the token view also unlocks the in-browser admin console.
 
-Changing the **World name** setting does not create the world until the server next
-starts. Until then, the settings name a world that does not exist. The map tab
-detects this, falls back to the world that is actually on disk, and tells you which
-one it is showing.
+### Offline map (seed only)
+
+Secondary, and only generated when you press **Generate**: your browser draws
+the whole world from the seed via the third-party site
+[valheim-map.world](https://valheim-map.world). No mod needed and it works with
+the server stopped, but it is static — no players. Your seed is sent to that
+site when you use it.
+
+The seed comes from the world's metadata file (`_main.N.fwl2`, ~200 bytes). The
+layout was verified against a real world: a length-prefixed world name followed
+by a length-prefixed seed, both readable strings. If the configured World name
+has no folder yet — changing the setting does not create the world until the
+next start — the tab falls back to the world actually on disk and says so.
+
+## Getting the live map working
+
+The plugin needs BepInEx, and BepInEx's Linux doorstop has to be **preloaded into
+the server process** — which Nitrado controls. Uploading BepInEx over FTP alone
+does **not** work; this was tested. Nitrado's own addon is the supported route:
+
+1. In Nitrado, install the **`valheim_bepinex`** addon (not `valheimplus`, which
+   also changes gameplay).
+2. Start the server once. `BepInEx/LogOutput.log` appearing proves it loaded.
+3. `node tools/install-mod.mjs --plugin-only` uploads just the plugin.
+4. Restart, and the map is at `http://<server-ip>:8790`.
+
+`tools/install-mod.mjs` also takes `--list` to preview and `--remove` to undo
+exactly what it uploaded.
+
+ValheimOne leaves **every gameplay feature disabled by default** — only
+`[Server]` and the map are on — so the world stays vanilla.
 
 ## Security
 

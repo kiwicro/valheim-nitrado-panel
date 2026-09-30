@@ -922,6 +922,60 @@ app.get(
   })
 );
 
+/* ---------------------------------------------------------------- live map
+ * ValheimOne (a server-side BepInEx plugin) serves a live map on its own port.
+ * The browser cannot call it directly — that would be a cross-origin request the
+ * mod does not send CORS headers for — so the panel proxies it.
+ */
+
+const LIVEMAP_PORT = Number(process.env.LIVEMAP_PORT) || 8790;
+
+async function fetchJsonWithTimeout(url, ms) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+app.get(
+  '/api/livemap',
+  wrap(async (req, res) => {
+    const id = requireService();
+    const status = await fetchServerStatus(id);
+    const ip = status?.server?.ip;
+    const port = Number(req.query.port) || LIVEMAP_PORT;
+
+    if (!ip) return res.json({ available: false, reason: 'Nitrado has not reported a server IP yet.' });
+
+    const base = `http://${ip}:${port}`;
+    try {
+      const live = await fetchJsonWithTimeout(`${base}/api/status`, 5000);
+      let players = null;
+      try {
+        players = await fetchJsonWithTimeout(`${base}/api/players`, 5000);
+      } catch {
+        /* player list is optional */
+      }
+      res.json({ available: true, url: base, port, status: live, players: players?.players ?? null });
+    } catch (err) {
+      res.json({
+        available: false,
+        url: base,
+        port,
+        reason:
+          err.name === 'AbortError'
+            ? `Nothing answered on ${base} within 5 seconds.`
+            : `Could not reach the live map at ${base} (${err.message}).`,
+      });
+    }
+  })
+);
+
 /* ---------------------------------------------------------------- error sink */
 
 app.use('/api', (req, res) => {

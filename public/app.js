@@ -97,6 +97,8 @@ const state = {
   players: null,
   playersRaw: null,
   worldMeta: null,
+  liveMap: null,
+  mapUrl: null,
   logSources: [],
   hasConsole: false,
   hasContainerConsole: false,
@@ -1627,38 +1629,137 @@ function renderWorldMeta() {
   };
 
   const url = `https://valheim-map.world/?seed=${encodeURIComponent(seed)}&offset=0,0&zoom=0.600`;
+  state.mapUrl = url;
   $('#map-open').href = url;
   $('#map-open').classList.remove('hidden');
 
-  // Only load the (heavy) third-party generator once per seed.
+  // The offline map runs a full world generator in the browser, so it is only
+  // loaded when asked for. If the world changed, drop any previous render.
   const frame = $('#map-frame');
-  if (frame.dataset.seed !== seed) {
-    frame.dataset.seed = seed;
+  if (frame.dataset.seed && frame.dataset.seed !== seed) {
+    frame.dataset.seed = '';
+    frame.removeAttribute('src');
     frame.classList.add('hidden');
-    placeholder.classList.remove('hidden');
     placeholder.textContent = '';
-    placeholder.append(
-      el('div', { class: 'loading' }, 'Generating the world map — this runs a full world generator in your browser and can take a little while.')
-    );
-    frame.src = url;
-    frame.classList.remove('hidden');
-
-    // Some browsers block third-party frames. Tell the user rather than
-    // leaving them staring at a spinner.
-    clearTimeout(mapLoadTimer);
-    mapLoadTimer = setTimeout(() => {
-      const placeholderEl = $('#map-placeholder');
-      if (placeholderEl.classList.contains('hidden')) return;
-      placeholderEl.textContent = '';
-      placeholderEl.append(
-        el('div', { class: 'empty' },
-          'Still loading after 20 seconds. Some browsers block embedded third-party pages — use "Open in new tab" above if this does not resolve.'
-        )
-      );
-    }, 20000);
+    placeholder.classList.remove('hidden');
+    placeholder.append(el('div', { class: 'empty' }, 'The world changed since this map was generated — press Generate for the new one.'));
   }
 
   renderAppliedModifiers(data);
+}
+
+function loadSeedMap() {
+  if (!state.mapUrl) {
+    toast('No world seed available yet.', 'error');
+    return;
+  }
+  const frame = $('#map-frame');
+  const placeholder = $('#map-placeholder');
+  frame.dataset.seed = state.worldMeta?.seed || '';
+  frame.src = state.mapUrl;
+  frame.classList.remove('hidden');
+  placeholder.textContent = '';
+  placeholder.classList.remove('hidden');
+  placeholder.append(
+    el('div', { class: 'loading' }, 'Generating the world map — this runs a full world generator in your browser and can take a while.')
+  );
+
+  clearTimeout(mapLoadTimer);
+  mapLoadTimer = setTimeout(() => {
+    if ($('#map-placeholder').classList.contains('hidden')) return;
+    $('#map-placeholder').textContent = '';
+    $('#map-placeholder').append(
+      el('div', { class: 'empty' },
+        'Still loading after 20 seconds. Some browsers block embedded third-party pages — use "Open in new tab" if this does not resolve.'
+      )
+    );
+  }, 20000);
+}
+
+/* ----------------------------------------------------------- live map (mod) */
+
+function fmtDuration(seconds) {
+  const total = Math.max(0, Math.floor(seconds || 0));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  if (h) return `${h}h ${m}m`;
+  if (m) return `${m}m ${total % 60}s`;
+  return `${total}s`;
+}
+
+function fmtClock(fraction) {
+  const minutes = Math.round(((fraction % 1) + 1) % 1 * 24 * 60);
+  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+}
+
+async function refreshLiveMap() {
+  const placeholder = $('#livemap-placeholder');
+  try {
+    state.liveMap = await api('/api/livemap');
+    renderLiveMap();
+  } catch (err) {
+    placeholder.textContent = '';
+    placeholder.append(el('div', { class: 'empty' }, err.message));
+  }
+}
+
+function renderLiveMap() {
+  const data = state.liveMap;
+  if (!data) return;
+
+  const statusBox = $('#livemap-status');
+  const placeholder = $('#livemap-placeholder');
+  const frame = $('#livemap-frame');
+  const chips = $('#livemap-chips');
+
+  if (!data.available) {
+    $('#livemap-sub').textContent = '';
+    statusBox.className = 'alert warn';
+    statusBox.textContent =
+      `${data.reason} The live map is served by the ValheimOne BepInEx plugin — it appears once the server is running with the plugin loaded.`;
+    chips.textContent = '';
+    frame.classList.add('hidden');
+    frame.removeAttribute('src');
+    frame.dataset.url = '';
+    $('#livemap-open').classList.add('hidden');
+    placeholder.textContent = '';
+    placeholder.classList.remove('hidden');
+    placeholder.append(el('div', { class: 'empty' }, 'Live map unavailable. The offline map below still works.'));
+    return;
+  }
+
+  const live = data.status || {};
+  statusBox.className = 'alert hidden';
+  $('#livemap-sub').textContent = `${data.url} · plugin ${live.pluginVersion || '?'} · ${live.view || 'public'} view`;
+  $('#livemap-open').href = `${data.url}/`;
+  $('#livemap-open').classList.remove('hidden');
+
+  const rows = [
+    ['Players', `${live.players ?? 0} / ${live.maxPlayers ?? '?'}`],
+    ['In-game day', live.day ?? '—'],
+    ['Time of day', live.timeOfDay != null ? fmtClock(live.timeOfDay) : '—'],
+    ['Explored', live.exploredPct != null ? `${Math.round(live.exploredPct)}%` : '—'],
+    ['Uptime', live.uptimeSeconds != null ? fmtDuration(live.uptimeSeconds) : '—'],
+    ['World', live.worldName || '—'],
+  ];
+  chips.textContent = '';
+  for (const [label, value] of rows) {
+    chips.append(
+      el('div', { class: 'applied-chip' },
+        el('span', { class: 'field-name' }, label),
+        el('span', { class: 'value mono' }, String(value))
+      )
+    );
+  }
+
+  if (frame.dataset.url !== data.url) {
+    frame.dataset.url = data.url;
+    frame.src = `${data.url}/`;
+    frame.classList.remove('hidden');
+    placeholder.textContent = '';
+    placeholder.classList.remove('hidden');
+    placeholder.append(el('div', { class: 'loading' }, 'Loading the live map from your server…'));
+  }
 }
 
 function renderAppliedModifiers(data) {
@@ -2136,7 +2237,7 @@ const TAB_META = {
   dashboard: ['Dashboard', 'Control and monitor your Valheim server'],
   settings: ['Server settings', 'Edit the settings Nitrado applies to your server'],
   players: ['Players & admins', 'See who is online and manage admin, ban and whitelist entries'],
-  map: ['World map', 'Your whole world, generated from its seed'],
+  map: ['World map', 'Live players from your server, plus an offline seed map'],
   backups: ['Backups & schedule', 'World backups, world files and scheduled restarts'],
   logs: ['Logs', 'Server and Nitrado activity history'],
   files: ['Files', 'Browse and edit files on the server'],
@@ -2168,7 +2269,7 @@ async function onTabEnter(tab) {
   if (tab === 'map') {
     if (!state.loadedTabs.has('map')) {
       state.loadedTabs.add('map');
-      await refreshWorldMeta();
+      await Promise.all([refreshWorldMeta(), refreshLiveMap()]);
     }
   }
   if (tab === 'backups') {
@@ -2298,10 +2399,12 @@ function wireEvents() {
   mapFrame.addEventListener('load', () => {
     if (mapFrame.src && !mapFrame.src.startsWith('about:')) $('#map-placeholder').classList.add('hidden');
   });
-  $('#map-open').addEventListener('click', () => {
-    // The link is the reliable path if a browser refuses to frame the site.
-    toast('Opening the map in a new tab.', 'info', 2500);
+  const liveFrame = $('#livemap-frame');
+  liveFrame.addEventListener('load', () => {
+    if (liveFrame.src && !liveFrame.src.startsWith('about:')) $('#livemap-placeholder').classList.add('hidden');
   });
+  $('#map-load').addEventListener('click', loadSeedMap);
+  $('#livemap-refresh').addEventListener('click', refreshLiveMap);
 
   // files
   $('#files-refresh').addEventListener('click', () => refreshFiles());

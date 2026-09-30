@@ -32,7 +32,17 @@ const SKIP = [/^winhttp\.dll$/i, /^start_(game|server)_bepinex\.sh$/i, /^changel
 const REMOTE_ROOT = '/valheim';
 
 const args = new Set(process.argv.slice(2));
-const pluginOnly = !args.has('--bepinex-only');
+const bepinexOnly = args.has('--bepinex-only');
+const pluginOnly = args.has('--plugin-only');
+
+/** Which entries to upload, depending on the mode. */
+function shouldUpload(name) {
+  const isPlugin = /^BepInEx\/plugins\//i.test(name);
+  const isPluginConfig = /^BepInEx\/config\/valheimone\.cfg$/i.test(name);
+  if (bepinexOnly) return !isPlugin && !isPluginConfig;
+  if (pluginOnly) return isPlugin || isPluginConfig;
+  return true;
+}
 
 /* --------------------------------------------------------------- zip reader */
 
@@ -91,15 +101,13 @@ try {
 
 const entries = readCentralDirectory(zip);
 const wanted = entries.filter((e) => !e.name.includes('..') && !SKIP.some((re) => re.test(e.name)));
-const filtered = entries.filter((e) => SKIP.some((re) => re.test(e.name))).map((e) => e.name);
 
 if (args.has('--list')) {
-  console.log(`\n${entries.length} entries (${wanted.length} would be uploaded)`);
+  const would = entries.filter((e) => shouldUpload(e.name));
+  console.log(`\n${entries.length} entries (${would.length} would be uploaded)`);
   for (const e of entries) {
-    const skip = SKIP.some((re) => re.test(e.name));
-    console.log(`  ${skip ? 'skip' : 'add '}  ${e.name}`);
+    console.log(`  ${shouldUpload(e.name) ? 'add ' : 'skip'}  ${e.name}`);
   }
-  console.log(`\nskipped: ${filtered.join(', ')}`);
   process.exit(0);
 }
 
@@ -134,8 +142,8 @@ try {
   }
 
   for (const entry of wanted) {
-    if (!pluginOnly && /^BepInEx\/plugins\//i.test(entry.name)) {
-      console.log(`  skip (bepinex only)  ${entry.name}`);
+    if (!shouldUpload(entry.name)) {
+      console.log(`  skip  ${entry.name}`);
       continue;
     }
     const remote = `${REMOTE_ROOT}/${entry.name}`;

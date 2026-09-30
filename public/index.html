@@ -296,46 +296,69 @@
           <div class="card">
             <div class="card-head">
               <div>
-                <h2 id="map-title">World map</h2>
-                <p class="muted small" id="map-sub">Reading the world file…</p>
+                <h2 id="livemap-title">Live map</h2>
+                <p class="muted small" id="livemap-sub">Checking whether the live map is running…</p>
               </div>
               <div class="row-actions">
-                <button id="map-copy-seed" class="btn btn-ghost btn-sm" disabled><svg class="ico"><use href="#i-copy"/></svg> Copy seed</button>
-                <a id="map-open" class="btn btn-primary btn-sm hidden" href="#" target="_blank" rel="noopener">Open in new tab <svg class="ico"><use href="#i-external"/></svg></a>
+                <button id="livemap-refresh" class="btn btn-ghost btn-sm"><svg class="ico"><use href="#i-refresh"/></svg> Refresh</button>
+                <a id="livemap-open" class="btn btn-primary btn-sm hidden" href="#" target="_blank" rel="noopener">Open in new tab <svg class="ico"><use href="#i-external"/></svg></a>
               </div>
             </div>
-            <div id="map-status" class="alert hidden"></div>
+            <div id="livemap-status" class="alert hidden"></div>
+            <div id="livemap-chips" class="settings-fields toggles"></div>
             <div class="map-wrap">
-              <iframe id="map-frame" class="map-frame hidden" title="Valheim world map" loading="lazy" referrerpolicy="no-referrer"></iframe>
-              <div id="map-placeholder" class="map-placeholder"><div class="loading">Loading the world map…</div></div>
+              <iframe id="livemap-frame" class="map-frame hidden" title="Live Valheim world map"></iframe>
+              <div id="livemap-placeholder" class="map-placeholder"><div class="loading">Checking…</div></div>
             </div>
           </div>
 
           <div class="card">
             <div class="card-head">
-              <h2>What this map can and cannot show</h2>
-              <span class="muted small">read this before you trust it</span>
+              <div>
+                <h2 id="map-title">Offline map</h2>
+                <p class="muted small" id="map-sub">Reading the world file…</p>
+              </div>
+              <div class="row-actions">
+                <button id="map-copy-seed" class="btn btn-ghost btn-sm" disabled><svg class="ico"><use href="#i-copy"/></svg> Copy seed</button>
+                <button id="map-load" class="btn btn-ghost btn-sm"><svg class="ico"><use href="#i-map"/></svg> Generate</button>
+                <a id="map-open" class="btn btn-primary btn-sm hidden" href="#" target="_blank" rel="noopener">Open in new tab <svg class="ico"><use href="#i-external"/></svg></a>
+              </div>
+            </div>
+            <div id="map-status" class="alert hidden"></div>
+            <div class="map-wrap">
+              <iframe id="map-frame" class="map-frame hidden" title="Valheim world map from seed" loading="lazy" referrerpolicy="no-referrer"></iframe>
+              <div id="map-placeholder" class="map-placeholder">
+                <div class="empty">Not loaded — the offline map runs a full world generator in your browser, so it only starts when you ask for it.</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <h2>Two maps, and what each one is</h2>
             </div>
             <ul class="plain-list">
               <li class="ok">
-                <strong>Can:</strong> the whole world's terrain, biomes and points of interest — bosses, dungeons,
-                villages — generated from your world seed. That is more than the in-game map shows, because it is not
-                limited to what you have explored.
+                <strong>Live map (top):</strong> served by the <span class="mono">ValheimOne</span> BepInEx plugin running on
+                your server, on port 8790. It re-draws from your world seed and updates in real time — player
+                positions, and optionally ships, carts, portals and tombstones. This is the one to use while the server
+                is running.
               </li>
-              <li class="no">
-                <strong>Cannot:</strong> live player positions. Vanilla Valheim and the Nitrado API expose no player
-                coordinates, and Valheim has no RCON — the only way to get them is a server-side mod, which this
-                service does not have installed.
-              </li>
-              <li class="no">
-                <strong>Cannot:</strong> your fog of war or your own map pins. Those live in the world's
-                <span class="mono">.db2</span> file, which this panel does not parse. Upload that file on the map site
-                if you want your explored map and markers.
+              <li class="ok">
+                <strong>Offline map (below):</strong> generated in your browser from the world seed by the third-party
+                site <span class="mono">valheim-map.world</span>. It needs no mod and works with the server stopped, but
+                it is static — no players.
               </li>
               <li class="warn">
-                <strong>Privacy:</strong> the map is drawn by the third-party site
-                <span class="mono">valheim-map.world</span>, so your world seed is sent to it when the map loads.
-                Nothing else about your server is shared.
+                <strong>Player dots depend on in-game sharing.</strong> ValheimOne respects each player's
+                "visible to other players" map setting by default, so a player who has switched that off will not
+                appear.
+              </li>
+              <li class="warn">
+                <strong>Your live map is publicly reachable</strong> at <span class="mono">http://&lt;server-ip&gt;:8790</span>
+                while the server runs — anyone who knows the address can view it. Player names are hidden from that
+                public view by default. Set an <span class="mono">AccessToken</span> in
+                <span class="mono">valheimone.cfg</span> if you want it locked down.
               </li>
             </ul>
           </div>
