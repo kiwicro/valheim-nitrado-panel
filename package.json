@@ -1,7 +1,8 @@
 {
   "name": "valheim-nitrado-panel",
   "version": "1.0.0",
-  "private": true,
+  "private": false,
+  "license": "MIT",
   "type": "module",
   "description": "Local web control panel for a Valheim dedicated server hosted on Nitrado.",
   "main": "server/index.js",
@@ -12,16 +13,32 @@
     "stop": "node tools/stop.mjs",
     "icon": "node tools/make-icon.mjs",
     "mock": "node test/mock-nitrado.mjs",
-    "discover": "node test/discover.mjs"
+    "discover": "node test/discover.mjs",
+    "test": "node test/smoke.mjs"
   },
   "engines": {
     "node": ">=20"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kiwicro/valheim-nitrado-panel.git"
+  },
+  "homepage": "https://github.com/kiwicro/valheim-nitrado-panel#readme",
+  "bugs": {
+    "url": "https://github.com/kiwicro/valheim-nitrado-panel/issues"
+  },
+  "author": "kiwicro",
+  "keywords": [
+    "valheim",
+    "nitrado",
+    "control-panel",
+    "game-server",
+    "dedicated-server",
+    "bepinex"
+  ],
   "dependencies": {
+    "basic-ftp": "^6.2.1",
     "dotenv": "^16.4.5",
     "express": "^4.19.2"
-  },
-  "devDependencies": {
-    "basic-ftp": "^6.2.1"
   }
 }
