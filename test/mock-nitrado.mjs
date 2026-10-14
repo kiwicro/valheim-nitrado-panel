@@ -124,9 +124,9 @@ let notifications = [
     id: 1,
     level: 'WARNING',
     type: 'default',
-    message: 'Server is currently stopped.',
-    message_long: 'Start the server from the dashboard to let players connect.',
-    created_at: '2026-09-26T11:48:07',
+    message: 'Scheduled maintenance for this host.',
+    message_long: 'The server may restart briefly during the maintenance window on 2026-10-18.',
+    created_at: '2026-10-14T09:00:00',
     dismissed: false,
   },
 ];
